@@ -1,0 +1,43 @@
+[tool.poetry]
+name = "containerlab-vms"
+version = "0.0.1"
+description = "Toolbox for starting virtual routers inside containers."
+authors = ["Inmanta <code@inmanta.com>"]
+license = "ASL 2.0"
+include=[]
+packages = [
+    { include = "clab_vm_startup", from = "src" },
+]
+
+[tool.poetry.dependencies]
+python = "^3.6"
+click = "^7.0"
+
+[tool.poetry.dev-dependencies]
+mypy = "*"
+isort = "*"
+flake8 = "*"
+black = "^19.10b0"
+
+[tool.black]
+line-length = 128
+target-version = ['py36', 'py37', 'py38']
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.eggs
+  | \.git
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | \.env
+  | _build
+  | buck-out
+  | build
+  | dist
+)/
+'''
+
+[build-system]
+requires = ["poetry>=0.12"]
+build-backend = "poetry.masonry.api"

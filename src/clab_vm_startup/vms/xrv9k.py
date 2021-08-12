@@ -3,10 +3,10 @@ import re
 from telnetlib import Telnet
 from typing import List, Tuple
 from clab_vm_startup.conn_mode import Connection
-from clab_vm_startup.host.host import Host
-from clab_vm_startup.host.socat import Port, PortForwarding
+from clab_vm_startup.host import Host
+from clab_vm_startup.host import Port, PortForwarding
 from clab_vm_startup.utils import gen_mac
-from clab_vm_startup.vr import VirtualRouter
+from clab_vm_startup.vms.vr import VirtualRouter
 from textwrap import dedent
 import time
 import logging

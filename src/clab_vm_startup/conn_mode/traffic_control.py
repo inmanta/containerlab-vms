@@ -1,5 +1,5 @@
 from typing import List, Tuple
-from connection_mode import Connection, ConnectionMode
+from .connection_mode import Connection, ConnectionMode
 from clab_vm_startup.host.host import Host
 from pathlib import Path
 from textwrap import dedent

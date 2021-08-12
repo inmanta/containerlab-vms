@@ -9,7 +9,7 @@ import enum
 LOGGER = logging.getLogger(__name__)
 
 
-class Port(enum.Enum, int):
+class Port(int, enum.Enum):
     SSH = 22
     HTTP = 80
     SNMP = 161

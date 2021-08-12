@@ -2,11 +2,11 @@ from abc import abstractmethod
 import enum
 from typing import List, Tuple
 
-from clab_vm_startup.host.host import Host
-from clab_vm_startup.host.nic import NetworkInterfaceController
+from clab_vm_startup.host import Host
+from clab_vm_startup.host import NetworkInterfaceController
 
 
-class ConnectionMode(enum.Enum, str):
+class ConnectionMode(str, enum.Enum):
     TC = "tc"
 
 

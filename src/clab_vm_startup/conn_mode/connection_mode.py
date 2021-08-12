@@ -13,12 +13,11 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
-from abc import abstractmethod
 import enum
+from abc import abstractmethod
 from typing import List, Tuple
 
-from clab_vm_startup.host import Host
-from clab_vm_startup.host import NetworkInterfaceController
+from clab_vm_startup.host import Host, NetworkInterfaceController
 
 
 class ConnectionMode(str, enum.Enum):
@@ -26,18 +25,14 @@ class ConnectionMode(str, enum.Enum):
 
 
 class Connection:
-
     def __init__(self, mode: ConnectionMode) -> None:
         self.mode = mode
-    
+
     @abstractmethod
     def setup_host(self, host: Host) -> None:
         pass
 
     def qemu_nic_args(self, nic: NetworkInterfaceController) -> List[Tuple[str, str]]:
         return [
-            (
-                "-device",
-                f"{nic.type},netdev={nic.device},mac={nic.mac},bus={nic.bus},addr={nic.addr}"
-            ),
+            ("-device", f"{nic.type},netdev={nic.device},mac={nic.mac},bus={nic.bus},addr={nic.addr}"),
         ]

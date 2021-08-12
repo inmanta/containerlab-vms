@@ -3,7 +3,7 @@ name = "containerlab-vms"
 version = "0.0.1"
 description = "Toolbox for starting virtual routers inside containers."
 authors = ["Inmanta <code@inmanta.com>"]
-license = "ASL 2.0"
+license = "Apache-2.0"
 include=[]
 packages = [
     { include = "clab_vm_startup", from = "src" },
@@ -14,10 +14,15 @@ python = "^3.6"
 click = "^7.0"
 
 [tool.poetry.dev-dependencies]
-mypy = "*"
-isort = "*"
-flake8 = "*"
-black = "^19.10b0"
+inmanta-dev-dependencies = "1.50.0"
+
+[tool.isort]
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+line_length = 128
+default_section = "FIRSTPARTY"
 
 [tool.black]
 line-length = 128

@@ -13,13 +13,12 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
-import subprocess
-from typing import List, Optional, Sequence, Tuple, Union
-from pathlib import Path
-import time
-import re
 import logging
-
+import re
+import subprocess
+import time
+from pathlib import Path
+from typing import List, Optional, Sequence, Tuple, Union
 
 LOGGER = logging.getLogger(__name__)
 
@@ -50,12 +49,9 @@ class Host:
     def has_interface(self, name: str) -> bool:
         interface = self.INTERFACES_PATH / Path(name)
         return interface.exists()
-    
+
     def get_interfaces(self, pattern: str = "*") -> Sequence[str]:
-        return [
-            interface.name
-            for interface in self.INTERFACES_PATH.glob(pattern)
-        ]
+        return [interface.name for interface in self.INTERFACES_PATH.glob(pattern)]
 
     def wait_provisioned_nics(self, timeout: int = 60) -> Sequence[str]:
         start = time.time()
@@ -82,7 +78,7 @@ class Host:
             f"Got {len(interfaces)}, expected at least {self._expected_provisioned_nics_count}.  "
             f"Current list of interfaces (mgmt excluded) is: {interfaces}"
         )
-    
+
     @property
     def highest_provisioned_nic_num(self) -> int:
         if self._highest_provisioned_nic_num is not None:

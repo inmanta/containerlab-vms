@@ -13,13 +13,14 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
+import enum
 import logging
-from ipaddress import IPv4Address
-from typing import Optional
 import subprocess
 import threading
+from ipaddress import IPv4Address
+from typing import Optional
+
 from clab_vm_startup.utils import io_logger
-import enum
 
 LOGGER = logging.getLogger(__name__)
 
@@ -32,8 +33,8 @@ class Port(int, enum.Enum):
     NETCONF = 830
     GNMI = 57_400
 
-class PortForwarding:
 
+class PortForwarding:
     def __init__(self, listen_port: int, target_addr: IPv4Address, target_port: int, protocol: str = "TCP") -> None:
         self.listen_port = listen_port
         self.target_addr = target_addr
@@ -43,7 +44,7 @@ class PortForwarding:
         self._process: Optional[subprocess.Popen] = None
         self._stdout_thread: Optional[threading.Thread] = None
         self._stderr_thread: Optional[threading.Thread] = None
-    
+
     @property
     def running(self) -> bool:
         return self._process is not None and self._process.returncode is None
@@ -54,11 +55,11 @@ class PortForwarding:
             f"socat {self.protocol.upper()}-LISTEN:{self.listen_port},fork "
             f"{self.protocol}:{str(self.target_addr)}:{self.target_port}"
         )
-    
+
     def start(self) -> None:
         if self.running:
             raise RuntimeError("This port forwarding process is already running")
-        
+
         self._process = subprocess.Popen(
             self.cmd,
             stdout=subprocess.PIPE,

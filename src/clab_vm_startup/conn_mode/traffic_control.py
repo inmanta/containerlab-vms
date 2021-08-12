@@ -13,13 +13,14 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
-from typing import List, Tuple
-from .connection_mode import Connection, ConnectionMode
-from clab_vm_startup.host.host import Host
 from pathlib import Path
 from textwrap import dedent
+from typing import List, Tuple
 
+from clab_vm_startup.host.host import Host
 from clab_vm_startup.host.nic import NetworkInterfaceController
+
+from .connection_mode import Connection, ConnectionMode
 
 
 class TrafficControlConnection(Connection):

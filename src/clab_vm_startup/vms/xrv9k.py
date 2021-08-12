@@ -13,19 +13,19 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
-from pathlib import Path
+import logging
 import re
+import time
+from pathlib import Path
 from telnetlib import Telnet
+from textwrap import dedent
 from typing import List, Tuple
-from clab_vm_startup.conn_mode import Connection
-from clab_vm_startup.host import Host
-from clab_vm_startup.host import Port, PortForwarding
+
+from clab_vm_startup.conn_mode.connection_mode import Connection
+from clab_vm_startup.host.host import Host
+from clab_vm_startup.host.socat import Port, PortForwarding
 from clab_vm_startup.utils import gen_mac
 from clab_vm_startup.vms.vr import VirtualRouter
-from textwrap import dedent
-import time
-import logging
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class XRV9K(VirtualRouter):
     ROUTER_CONFIG_PATH = Path("/router-config/iosxr_config.txt")
     ROUTER_CONFIG_ISO_PATH = Path("/router-config.iso")
     CONFIG_TIMEOUT = 15 * 60  # 15 minutes
-    
+
     def __init__(
         self,
         host: Host,
@@ -78,7 +78,7 @@ class XRV9K(VirtualRouter):
                     target_addr="127.0.0.1",
                     target_port=17_400,
                 ),
-            ]
+            ],
         )
 
         self.username = username
@@ -104,13 +104,20 @@ class XRV9K(VirtualRouter):
 
         args.extend(
             [
-                "-machine", "smm=off",
-                "-boot", "order=c",
-                "-drive", f"file={str(self.ROUTER_CONFIG_ISO_PATH)},media=cdrom,index=2",
-                "-serial", "telnet:0.0.0.0:5000,server,nowait",
-                "-serial", "telnet:0.0.0.0:5001,server,nowait",
-                "-serial", "telnet:0.0.0.0:5002,server,nowait",
-                "-serial", "telnet:0.0.0.0:5003,server,nowait",
+                "-machine",
+                "smm=off",
+                "-boot",
+                "order=c",
+                "-drive",
+                f"file={str(self.ROUTER_CONFIG_ISO_PATH)},media=cdrom,index=2",
+                "-serial",
+                "telnet:0.0.0.0:5000,server,nowait",
+                "-serial",
+                "telnet:0.0.0.0:5001,server,nowait",
+                "-serial",
+                "telnet:0.0.0.0:5002,server,nowait",
+                "-serial",
+                "telnet:0.0.0.0:5003,server,nowait",
             ]
         )
 
@@ -149,26 +156,20 @@ class XRV9K(VirtualRouter):
 
         # Building config iso
         _, stderr = self.host.run_command(
-            [
-                "mkisofs",
-                "-l",
-                "-o",
-                str(self.ROUTER_CONFIG_ISO_PATH),
-                str(self.ROUTER_CONFIG_PATH.parent),
-            ]
+            ["mkisofs", "-l", "-o", str(self.ROUTER_CONFIG_ISO_PATH), str(self.ROUTER_CONFIG_PATH.parent)]
         )
         if stderr:
             LOGGER.warning(f"Got some error while running mkisofs: {stderr}")
 
     def post_start(self) -> None:
         xr_console = Telnet("127.0.0.1", 5000, timeout=5)
-       
+
         console_logger = logging.getLogger("xr_console")
 
         # Waiting for cvac config to complete
         # The following regex allows us to match logs from cvac on the console
-        cvac_config_regex = re.compile("RP\/0\/RP0\/CPU0\:(.*): cvac\[([0-9]+)\]: %MGBL-CVAC-4-CONFIG_([A-Z]+) : (.*)")
-        
+        cvac_config_regex = re.compile(r"RP\/0\/RP0\/CPU0\:(.*): cvac\[([0-9]+)\]: %MGBL-CVAC-4-CONFIG_([A-Z]+) : (.*)")
+
         # Whether the configuration of the router is done
         cvac_config_done = False
 
@@ -214,8 +215,7 @@ class XRV9K(VirtualRouter):
                     continue
 
                 raise RuntimeError(
-                    "Unexpected match while waiting for cvac config to complete, "
-                    f"stage is {stage}: {match.string}"
+                    "Unexpected match while waiting for cvac config to complete, " f"stage is {stage}: {match.string}"
                 )
 
         xr_console.close()
@@ -226,7 +226,7 @@ class XRV9K(VirtualRouter):
         def wait_write(cmd: str, wait: str = "#") -> None:
             if wait:
                 xr_console.read_until(wait.encode())
-            
+
             xr_console.write(f"{cmd}\r".encode())
 
         wait_write("", wait=None)
@@ -239,11 +239,7 @@ class XRV9K(VirtualRouter):
 
         # check if we are prompted to overwrite current keys
         ridx, match, res = xr_console.expect(
-            [
-                b"How many bits in the modulus",
-                b"Do you really want to replace them",
-                b"^[^ ]+#",
-            ],
+            [b"How many bits in the modulus", b"Do you really want to replace them", b"^[^ ]+#"],
             10,
         )
         if match:  # got a match!

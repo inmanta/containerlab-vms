@@ -13,15 +13,15 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
-import random
 import logging
-from typing import Callable, IO
+import random
+from typing import IO, Callable
 
 
 def gen_mac(last_octet: int = 0):
     """
-        Generate a random MAC address that is in the qemu OUI space and that
-        has the given last octet.
+    Generate a random MAC address that is in the qemu OUI space and that
+    has the given last octet.
     """
     return "52:54:00:%02x:%02x:%02x" % (
         random.randint(0x00, 0xFF),
@@ -30,7 +30,7 @@ def gen_mac(last_octet: int = 0):
     )
 
 
-def io_logger(stream: IO[str], logger_name: str, stop: Callable[[],bool]) -> None:
+def io_logger(stream: IO[str], logger_name: str, stop: Callable[[], bool]) -> None:
     logger = logging.getLogger(logger_name)
 
     while not stop():

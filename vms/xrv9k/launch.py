@@ -15,14 +15,14 @@
 """
 import logging
 import os
-from clab_vm_startup.conn_mode import ConnectionMode
-from clab_vm_startup.conn_mode import TrafficControlConnection
-from clab_vm_startup.host import Host
-from clab_vm_startup.vms.xrv9k import XRV9K
-import click
 import sys
 import time
 from pathlib import Path
+
+import click
+from clab_vm_startup.conn_mode import ConnectionMode, TrafficControlConnection
+from clab_vm_startup.host import Host
+from clab_vm_startup.vms.xrv9k import XRV9K
 
 
 @click.command()

@@ -13,6 +13,3 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
-from clab_vm_startup.host.host import Host
-from clab_vm_startup.host.nic import NetworkInterfaceController
-from clab_vm_startup.host.socat import PortForwarding, Port

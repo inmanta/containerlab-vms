@@ -13,24 +13,24 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
-from pathlib import Path
-import threading
-from typing import List, Optional, Sequence, Tuple
-import subprocess
-from telnetlib import Telnet
+import datetime
+import logging
 import math
 import os
+import subprocess
+import threading
 import time
+from abc import abstractmethod
+from ipaddress import IPv4Address, IPv4Network
+from pathlib import Path
+from telnetlib import Telnet
+from typing import List, Optional, Sequence, Tuple
+
 from clab_vm_startup.conn_mode import Connection
 from clab_vm_startup.host.host import Host
 from clab_vm_startup.host.nic import NetworkInterfaceController
 from clab_vm_startup.host.socat import PortForwarding
-
 from clab_vm_startup.utils import gen_mac, io_logger
-from abc import abstractmethod
-import logging
-import datetime
-from ipaddress import IPv4Address, IPv4Network
 
 LOGGER = logging.getLogger(__name__)
 
@@ -83,11 +83,7 @@ class VirtualRouter:
 
         return [
             ("-device", f"{self.mgmt_nic_type},netdev=mgmt,mac={gen_mac(0)}"),
-            (
-                "-netdev",
-                f"user,id=mgmt,net={str(self.ip_network)},"
-                f"tftp={str(self.TFTP_FOLDER)}{hostfwd}"
-            ),
+            ("-netdev", f"user,id=mgmt,net={str(self.ip_network)}," f"tftp={str(self.TFTP_FOLDER)}{hostfwd}"),
         ]
 
     @property
@@ -106,16 +102,12 @@ class VirtualRouter:
             if not self.host.has_interface(f"eth{nic_index}"):
                 if nic_index >= self.host.highest_provisioned_nic_num:
                     continue
-                
+
                 # Current intf number is *under* the highest provisioned nic number, so we need
                 # to allocate a "dummy" interface so that when the users data plane interface is
                 # actually provisioned it is provisioned in the appropriate "slot"
-                qemu_args.append(
-                    ("-device", f"{self.NIC_TYPE},netdev={nic.device},bus={nic.bus},addr={nic.addr}")
-                )
-                qemu_args.append(
-                    ("-netdev", f"socket,id={nic.device},listen=:{10_000 + nic_index}")
-                )
+                qemu_args.append(("-device", f"{self.NIC_TYPE},netdev={nic.device},bus={nic.bus},addr={nic.addr}"))
+                qemu_args.append(("-netdev", f"socket,id={nic.device},listen=:{10_000 + nic_index}"))
                 continue
 
             # Else, we extend the arguments with whatever the connection requires
@@ -143,9 +135,7 @@ class VirtualRouter:
         # Setup PCI buses
         num_pci_buses = math.ceil(self.nics / self.NICS_PER_PCI_BUS)
         for pci in range(1, num_pci_buses + 1):
-            qemu_args.append(
-                ("-device", f"pci-bridge,chassis_nr={pci},id=pci.{pci}")
-            )
+            qemu_args.append(("-device", f"pci-bridge,chassis_nr={pci},id=pci.{pci}"))
 
         # Setup mgmt interface args
         qemu_args.extend(self._mgmt_interface_boot_args)
@@ -153,16 +143,12 @@ class VirtualRouter:
         # Setup nics args
         qemu_args.extend(self._nics_boot_args)
 
-        return [
-            elem
-            for arg in qemu_args
-            for elem in arg
-        ]
+        return [elem for arg in qemu_args for elem in arg]
 
     @abstractmethod
     def pre_start(self) -> None:
         """
-            This method will be called before the VM is started.
+        This method will be called before the VM is started.
         """
 
     def _start(self) -> None:
@@ -203,41 +189,26 @@ class VirtualRouter:
         self._stderr_thread.start()
 
         # Connecting to qemu monitor
-        max_retry = 5
-        for _ in range(0, max_retry):
-            try:
-                self._qemu_monitor = Telnet("127.0.0.1", 4000)
-                LOGGER.debug("Successfully connected to QEMU monitor")
-                break
-            except:
-                pass
-
-            time.sleep(1)
-
-        if self._qemu_monitor is None:
-            raise RuntimeError(f"Failed to connect to QEMU monitor after {max_retry} attempts")
+        self._qemu_monitor = Telnet("127.0.0.1", 4000)
+        LOGGER.debug("Successfully connected to QEMU monitor")
 
         LOGGER.debug("Starting port forwarding processes")
         for forwarded_port in self.forwarded_ports:
             if forwarded_port.running:
-                LOGGER.warning(
-                    "The following port forwarding process should not be running but "
-                    f"is: `{forwarded_port.cmd}`"
-                )
+                LOGGER.warning("The following port forwarding process should not be running but " f"is: `{forwarded_port.cmd}`")
                 continue
 
             forwarded_port.start()
 
-
     @abstractmethod
     def post_start(self) -> None:
         """
-            This method will be called after the VM has been started.
+        This method will be called after the VM has been started.
         """
 
     def start(self) -> None:
         """
-            Start the VM, if it hasn't been started before.
+        Start the VM, if it hasn't been started before.
         """
         if self.running:
             raise RuntimeError("Can not start the vm, it is already running")
@@ -271,20 +242,17 @@ class VirtualRouter:
     @abstractmethod
     def pre_stop(self) -> None:
         """
-            This method will be called before the VM is stopped.
+        This method will be called before the VM is stopped.
         """
 
     def _stop(self) -> None:
         """
-            Stops the VM and close the telnet connection
+        Stops the VM and close the telnet connection
         """
         LOGGER.debug("Stopping port forwarding processes")
         for forwarded_port in self.forwarded_ports:
             if not forwarded_port.running:
-                LOGGER.warning(
-                    "The following port forwarding process should be running but "
-                    f"isn't: `{forwarded_port.cmd}`"
-                )
+                LOGGER.warning("The following port forwarding process should be running but " f"isn't: `{forwarded_port.cmd}`")
                 continue
 
             forwarded_port.stop()
@@ -308,16 +276,15 @@ class VirtualRouter:
             if self._stderr_thread.is_alive():
                 LOGGER.warning("Failed to join the stderr io logging thread")
 
-
     @abstractmethod
     def post_stop(self) -> None:
         """
-            This method will be called after the VM has been stopped.
+        This method will be called after the VM has been stopped.
         """
 
     def stop(self) -> None:
         """
-            Stop the VM, if it is running.
+        Stop the VM, if it is running.
         """
         if not self.running:
             raise RuntimeError("Can not stop the vm, it is not running")

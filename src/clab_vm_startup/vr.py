@@ -1,4 +1,5 @@
 from pathlib import Path
+import threading
 from typing import List, Optional, Sequence, Tuple
 import subprocess
 from telnetlib import Telnet
@@ -8,8 +9,15 @@ import time
 from clab_vm_startup.conn_mode import Connection
 from clab_vm_startup.host.host import Host
 from clab_vm_startup.host.nic import NetworkInterfaceController
+from clab_vm_startup.host.socat import PortForwarding
 
-from clab_vm_startup.utils import gen_mac
+from clab_vm_startup.utils import gen_mac, io_logger
+from abc import abstractmethod
+import logging
+import datetime
+from ipaddress import IPv4Address, IPv4Network
+
+LOGGER = logging.getLogger(__name__)
 
 
 class VirtualRouter:
@@ -17,13 +25,6 @@ class VirtualRouter:
     NICS_PER_PCI_BUS = 26  # Tested to work with Xrv
     NIC_TYPE = "e1000"
     TFTP_FOLDER = Path("/tftpboot")
-
-    # Those are the ports to do the forwarding to
-    SSH_PORT = 2022
-    SNMP_PORT = 2161
-    NETCONF_PORT = 2830
-    HTTP_PORT = 2080
-    HTTPS_PORT = 2443
 
     def __init__(
         self,
@@ -33,6 +34,8 @@ class VirtualRouter:
         vcpus: int = 1,
         ram: int = 4096,
         nics: int = 0,
+        mgmt_nic_type: Optional[str] = None,
+        forwarded_ports: Optional[List[PortForwarding]] = None,
     ) -> None:
         self.host = host
         self.connection = connection
@@ -40,27 +43,35 @@ class VirtualRouter:
         self.vcpus = vcpus
         self.ram = ram
         self.nics = nics
+        self.ip_address = IPv4Address("10.0.0.15")
+        self.ip_network = IPv4Network("10.0.0.0/24")
+        self.mgmt_nic_type = mgmt_nic_type or self.NIC_TYPE
+        self.forwarded_ports = forwarded_ports or []
 
         self._boot_process: Optional[subprocess.Popen] = None
+        self._stdout_thread: Optional[threading.Thread] = None
+        self._stderr_thread: Optional[threading.Thread] = None
         self._qemu_monitor: Optional[Telnet] = None
 
     @property
     def running(self) -> bool:
-        return self._boot_process is not None
+        return self._boot_process is not None and self._boot_process.returncode is None
 
     @property
-    def _mgmt_interface_boot_args(self) -> Sequence[Tuple[str, str]]:
+    def _mgmt_interface_boot_args(self) -> List[Tuple[str, str]]:
+        hostfwd = ""
+        for forwarded_port in self.forwarded_ports:
+            hostfwd += (
+                f",hostfwd={forwarded_port.protocol.lower()}::{forwarded_port.target_port}-"
+                f"{str(self.ip_address)}:{forwarded_port.listen_port}"
+            )
+
         return [
-            ("-device", f"{self.NIC_TYPE},netdev=p00,mac={gen_mac(0)}"),
+            ("-device", f"{self.mgmt_nic_type},netdev=mgmt,mac={gen_mac(0)}"),
             (
                 "-netdev",
-                "user,id=p00,net=10.0.0.0/24,"
-                f"tftp={str(self.TFTP_FOLDER)},"
-                f"hostfwd=tcp::{self.SSH_PORT}-10.0.0.15:22,"
-                f"hostfwd=udp::{self.SNMP_PORT}-10.0.0.15:161,"
-                f"hostfwd=tcp::{self.NETCONF_PORT}-10.0.0.15:830,"
-                f"hostfwd=tcp::{self.HTTP_PORT}-10.0.0.15:80,"
-                f"hostfwd=tcp::{self.HTTPS_PORT}-10.0.0.15:443"
+                f"user,id=mgmt,net={str(self.ip_network)},"
+                f"tftp={str(self.TFTP_FOLDER)}{hostfwd}"
             ),
         ]
 
@@ -107,7 +118,6 @@ class VirtualRouter:
             ("-cpu", "host"),
             ("-smp", f"cores={self.vcpus},threads=1,sockets=1"),
             ("-monitor", "tcp:0.0.0.0:4000,server,nowait"),
-            ("-serial", "telnet:0.0.0.0:5000,server,nowait"),
             ("-drive", f"if=ide,file={self.disk_image}"),
         ]
 
@@ -134,14 +144,17 @@ class VirtualRouter:
             for elem in arg
         ]
 
+    @abstractmethod
     def pre_start(self) -> None:
         """
-            Overwrite this in inheriting classes
+            This method will be called before the VM is started.
         """
 
     def _start(self) -> None:
         # Starting vm process
-        boot_command = " ".join(self.boot_args)
+        boot_args = self.boot_args
+        boot_command = " ".join(boot_args)
+        LOGGER.debug(f"VM boot command: {boot_command}")
         self._boot_process = subprocess.Popen(
             boot_command,
             stdout=subprocess.PIPE,
@@ -151,12 +164,35 @@ class VirtualRouter:
             executable="/bin/bash",
         )
 
+        def stop_logging() -> bool:
+            return not self.running
+
+        self._stdout_thread = threading.Thread(
+            target=io_logger,
+            args=(
+                self._boot_process.stdout,
+                f"{boot_args[0]}[{self._boot_process.pid}]-stdout",
+                stop_logging,
+            ),
+        )
+        self._stdout_thread.start()
+
+        self._stderr_thread = threading.Thread(
+            target=io_logger,
+            args=(
+                self._boot_process.stderr,
+                f"{boot_args[0]}[{self._boot_process.pid}]-stderr",
+                stop_logging,
+            ),
+        )
+        self._stderr_thread.start()
+
         # Connecting to qemu monitor
         max_retry = 5
         for _ in range(0, max_retry):
             try:
-                connection = Telnet("127.0.0.1", 4000)
-                self._qemu_monitor = connection
+                self._qemu_monitor = Telnet("127.0.0.1", 4000)
+                LOGGER.debug("Successfully connected to QEMU monitor")
                 break
             except:
                 pass
@@ -164,12 +200,24 @@ class VirtualRouter:
             time.sleep(1)
 
         if self._qemu_monitor is None:
-            raise RuntimeError(f"Failed to connect to qemu monitor after {max_retry} attempts")
+            raise RuntimeError(f"Failed to connect to QEMU monitor after {max_retry} attempts")
+
+        LOGGER.debug("Starting port forwarding processes")
+        for forwarded_port in self.forwarded_ports:
+            if forwarded_port.running:
+                LOGGER.warning(
+                    "The following port forwarding process should not be running but "
+                    f"is: `{forwarded_port.cmd}`"
+                )
+                continue
+
+            forwarded_port.start()
 
 
+    @abstractmethod
     def post_start(self) -> None:
         """
-            Overwrite this in inheriting classes
+            This method will be called after the VM has been started.
         """
 
     def start(self) -> None:
@@ -178,6 +226,9 @@ class VirtualRouter:
         """
         if self.running:
             raise RuntimeError("Can not start the vm, it is already running")
+
+        LOGGER.debug("Ready to start VM")
+        start_time = time.time()
 
         self.TFTP_FOLDER.mkdir(parents=True, exist_ok=True)
 
@@ -188,30 +239,65 @@ class VirtualRouter:
         self.host.wait_provisioned_nics()
 
         # Running pre-start step, any vm class inheriting from this class can run extra step in there
+        LOGGER.debug("Calling pre-start")
         self.pre_start()
 
         # Starting the vm and the qemu monitor console
         self._start()
 
         # Running post-start step, any vm class inheriting from this class can run extra step in there
+        LOGGER.debug("Calling post-start")
         self.post_start()
 
+        stop_time = time.time()
+        startup_duration = datetime.timedelta(seconds=stop_time - start_time)
+        LOGGER.info(f"VM was successfully started in {str(startup_duration)}")
+
+    @abstractmethod
     def pre_stop(self) -> None:
         """
-            Overwrite this in inheriting classes
+            This method will be called before the VM is stopped.
         """
 
     def _stop(self) -> None:
         """
             Stops the VM and close the telnet connection
         """
+        LOGGER.debug("Stopping port forwarding processes")
+        for forwarded_port in self.forwarded_ports:
+            if not forwarded_port.running:
+                LOGGER.warning(
+                    "The following port forwarding process should be running but "
+                    f"isn't: `{forwarded_port.cmd}`"
+                )
+                continue
+
+            forwarded_port.stop()
+
         if self._qemu_monitor is not None:
             # TODO graceful shutdown with `system_powerdown`
             self._qemu_monitor.close()
 
+        if self._boot_process:
+            self._boot_process.kill()
+            self._boot_process.wait(5)
+            self._boot_process = None
+
+        if self._stdout_thread:
+            self._stdout_thread.join(5)
+            if self._stdout_thread.is_alive():
+                LOGGER.warning("Failed to join the stdout io logging thread")
+
+        if self._stderr_thread:
+            self._stderr_thread.join(5)
+            if self._stderr_thread.is_alive():
+                LOGGER.warning("Failed to join the stderr io logging thread")
+
+
+    @abstractmethod
     def post_stop(self) -> None:
         """
-            Overwrite this in inheriting classes
+            This method will be called after the VM has been stopped.
         """
 
     def stop(self) -> None:
@@ -221,11 +307,20 @@ class VirtualRouter:
         if not self.running:
             raise RuntimeError("Can not stop the vm, it is not running")
 
+        LOGGER.debug("Ready to stop VM")
+        start_time = time.time()
+
         # Running pre-stop step, any vm class inheriting from this class can run extra step in there
+        LOGGER.debug("Calling pre-stop")
         self.pre_stop()
 
         # Stopping the vm and the qemu monitor console
         self._stop()
 
         # Running post-stop step, any vm class inheriting from this class can run extra step in there
+        LOGGER.debug("Calling post-stop")
         self.post_stop()
+
+        stop_time = time.time()
+        shutdown_duration = datetime.timedelta(seconds=stop_time - start_time)
+        LOGGER.info(f"VM was successfully shutdown in {str(shutdown_duration)}")

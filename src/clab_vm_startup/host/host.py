@@ -1,7 +1,12 @@
-from typing import Optional, Sequence
+import subprocess
+from typing import List, Optional, Sequence, Tuple, Union
 from pathlib import Path
 import time
 import re
+import logging
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 class Host:
@@ -12,8 +17,20 @@ class Host:
         self._expected_provisioned_nics_count = expected_provisioned_nics_count
         self._highest_provisioned_nic_num: Optional[int] = None
 
-    def run_command(self, cmd) -> None:
-        pass
+    def run_command(
+        self,
+        cmd: Union[List[str], str],
+        cwd: Optional[str] = None,
+        shell: bool = False,
+    ) -> Tuple[str, str]:
+        LOGGER.debug(f"Running the following command on the host: {cmd}")
+        process = subprocess.Popen(
+            cmd,
+            cwd=cwd,
+            shell=shell,
+            universal_newlines=True,
+        )
+        return process.communicate()
 
     def has_interface(self, name: str) -> bool:
         interface = self.INTERFACES_PATH / Path(name)
@@ -28,6 +45,7 @@ class Host:
     def wait_provisioned_nics(self, timeout: int = 60) -> Sequence[str]:
         start = time.time()
         while time.time() - start < timeout:
+            LOGGER.debug("Waiting for provisioned nics to show up")
 
             # Getting all ethX interfaces
             interfaces = self.get_interfaces("eth*")
@@ -37,7 +55,10 @@ class Host:
 
             # If we have enough interfaces we can stop waiting
             if len(interfaces) >= self._expected_provisioned_nics_count:
+                LOGGER.info(f"Found all interfaces: {interfaces}")
                 return interfaces
+
+            LOGGER.debug(f"Found {len(interfaces)} out of {self._expected_provisioned_nics_count} interfaces")
 
             time.sleep(5)
 
@@ -67,5 +88,7 @@ class Host:
             interface_num = int(interface_match.group(0))
             if interface_num > self._highest_provisioned_nic_num:
                 self._highest_provisioned_nic_num = interface_num
+
+        LOGGER.debug(f"The highest interface number in {interfaces} is {self._highest_provisioned_nic_num}")
 
         return self._highest_provisioned_nic_num

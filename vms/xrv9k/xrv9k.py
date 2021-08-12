@@ -215,6 +215,10 @@ class XRV9K(VirtualRouter):
             xr_console.write(f"{cmd}\r".encode())
 
         wait_write("", wait=None)
+
+        wait_write(self.username, wait="Username:")
+        wait_write(self.password, wait="Password:")
+
         wait_write("terminal length 0")
         wait_write("crypto key generate rsa")
 
@@ -233,8 +237,7 @@ class XRV9K(VirtualRouter):
             elif ridx == 1:
                 wait_write("no", None)
 
-        # make sure we get our prompt back
-        wait_write("")
+        wait_write("exit")
 
         xr_console.close()
 

@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 from telnetlib import Telnet
 from textwrap import dedent
-from typing import List, Optional, Tuple
+from typing import List, Match, Optional, Pattern, Sequence, Tuple, Union
 
 from clab_vm_startup.conn_mode.connection_mode import Connection
 from clab_vm_startup.host.host import Host
@@ -28,6 +28,108 @@ from clab_vm_startup.utils import gen_mac
 from clab_vm_startup.vms.vr import VirtualRouter
 
 LOGGER = logging.getLogger(__name__)
+
+
+class IOSXRConsole:
+    def __init__(self, serial_console: Telnet, username: str, password: str) -> None:
+        self.username = username
+        self.password = password
+
+        self._hostname: Optional[str] = None
+
+        self._console = serial_console
+        self._connected = False
+        self.logger = logging.getLogger(f"iosxr[{self._console.host}:{self._console.port}]")
+        self._remainder = ""
+
+    @property
+    def connected(self) -> bool:
+        return self._connected
+
+    @property
+    def cli_prompt(self) -> str:
+        return f"RP/0/RP0/CPU0:{self._hostname}#"
+
+    def _log(self, data: str) -> str:
+        lines = (self._remainder + data).split("\n")
+        if lines:
+            self._remainder = lines[-1]
+            lines = lines[:-1]
+        else:
+            self._remainder = ""
+
+        for line in lines:
+            self.logger.debug(line.strip())
+
+    def connect(self) -> None:
+        if self.connected:
+            raise RuntimeError("This IOS XR console is already connected")
+
+        # Triggering login prompt
+        self.wait_write("", None)
+        self.wait_write(self.username, "Username:")
+        self.wait_write(self.password, "Password:")
+
+        ridx, match, res = self._console.expect(
+            [b"% User Authentication failed", re.compile(r"RP\/0\/RP0\/CPU0\:(.*)\#".encode())],
+            timeout=10,
+        )
+        self._log(res.decode())
+        if not match:
+            raise TimeoutError("Didn't match any of the expected value")
+
+        if ridx == 0:
+            raise RuntimeError("Failed to connect, authentication failed")
+
+        if ridx == 1:
+            self._hostname = match.group(1).decode()
+            self._connected = True
+
+    def disconnect(self) -> None:
+        if not self.connected:
+            raise RuntimeError("This IOS XR console is not yet connected")
+
+        self.wait_write("", None)
+        self.wait_write("exit", self.cli_prompt)
+
+        try:
+            self.wait_write("", self.cli_prompt, timeout=1)
+            raise RuntimeError("Disconnection failed")
+        except TimeoutError:
+            self._hostname = None
+            self._connected = False
+
+    def wait_show(self, wait: str, timeout: int = 10) -> None:
+        res = self._console.read_until(wait.encode(), timeout=timeout).decode()
+        self._log(res)
+
+        if wait not in res:
+            raise TimeoutError(f"Timeout while waiting for '{wait}'")
+
+    def wait_write(self, write: str, wait: Optional[str] = None, timeout: int = 10) -> None:
+        if wait is not None:
+            self.wait_show(wait, timeout)
+
+        self._console.write(f"{write}\r".encode())
+
+    def expect(
+        self, list: Sequence[Union[Pattern[str], str]], timeout: Optional[float] = None
+    ) -> Tuple[int, Optional[Match[bytes]], str]:
+        # We accept str in input but telnetlib takes bytes, we should convert our strings to bytes
+        byte_list = []
+        for elem in list:
+            if isinstance(elem, str):
+                byte_list.append(elem.encode())
+                continue
+
+            if isinstance(elem, Pattern):
+                byte_list.append(re.compile(elem.pattern.encode()))
+                continue
+
+        ridx, match, res = self._console.expect(byte_list, timeout)
+        data = res.decode()
+        self._log(data)
+        return ridx, match, data
 
 
 class XRV9K(VirtualRouter):
@@ -244,34 +346,30 @@ class XRV9K(VirtualRouter):
         if self._xr_console is None:
             self._xr_console = self.get_serial_console_connection()
 
-        def wait_write(cmd: str, wait: Optional[str] = "#") -> None:
-            if wait is not None:
-                self._xr_console.read_until(wait.encode())
-
-            self._xr_console.write(f"{cmd}\r".encode())
-
-        wait_write("", wait=None)
-
-        wait_write(self.username, wait="Username:")
-        wait_write(self.password, wait="Password:")
-
-        wait_write("terminal length 0")
-        wait_write("crypto key generate rsa")
+        console = IOSXRConsole(self._xr_console, self.username, self.password)
+        console.connect()
+        console.wait_write("")
+        console.wait_write("terminal length 0", console.cli_prompt)
+        console.wait_write("crypto key generate rsa", console.cli_prompt)
 
         # check if we are prompted to overwrite current keys
-        ridx, match, res = self._xr_console.expect(
-            [b"How many bits in the modulus", b"Do you really want to replace them", b"^[^ ]+#"],
+        ridx, match, res = console.expect(
+            [
+                "How many bits in the modulus",
+                "Do you really want to replace them",
+                console.cli_prompt,
+            ],
             10,
         )
         if match:  # got a match!
             if ridx == 0:
-                wait_write("2048", None)
+                console.wait_write("2048", None)
                 LOGGER.info("Rsa key configured")
             elif ridx == 1:
-                wait_write("no", None)
+                console.wait_write("no", None)
                 LOGGER.info("Rsa key was already configured")
 
-        wait_write("exit")
+        console.disconnect()
 
     def pre_stop(self) -> None:
         if self._xr_console is not None:

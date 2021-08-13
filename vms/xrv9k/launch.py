@@ -13,6 +13,7 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
+import logging
 import os
 import signal
 from pathlib import Path
@@ -24,6 +25,8 @@ from clab_vm_startup.conn_mode.traffic_control import TrafficControlConnection
 from clab_vm_startup.host.host import Host
 from clab_vm_startup.utils import setup_logging
 from clab_vm_startup.vms.xrv9k import XRV9K
+
+LOGGER = logging.getLogger(__name__)
 
 
 @click.command()
@@ -89,7 +92,8 @@ def main(
     # The user can overwrite the config timeout by setting the env variable `CONFIG_TIMEOUT`
     CONFIG_TIMEOUT_OVERWRITE = os.getenv("CONFIG_TIMEOUT")
     if CONFIG_TIMEOUT_OVERWRITE is not None:
-        XRV9K.CONFIG_TIMEOUT = CONFIG_TIMEOUT_OVERWRITE
+        LOGGER.warning(f"Overwriting config timeout with new value: {CONFIG_TIMEOUT_OVERWRITE}")
+        XRV9K.CONFIG_TIMEOUT = int(CONFIG_TIMEOUT_OVERWRITE)
 
     # Containerlab will setup some interfaces on its own
     expected_provisioned_nics_count = int(os.getenv("CLAB_INTFS", default=0))
@@ -108,7 +112,7 @@ def main(
     if len(disk_image_files) != 1:
         raise RuntimeError("Couldn't find the router image file.")
 
-    # Genrating overlay copy of the disk image
+    # Generating overlay copy of the disk image
     disk_image_file = str(disk_image_files[0])
     overlay_disk_image_file = disk_image_file.strip(".qcow2") + "-overlay.qcow2"
     host.run_command(

@@ -35,7 +35,19 @@ class Port(int, enum.Enum):
 
 
 class PortForwarding:
+    """
+    This class represents a port forwarding process running on the host.
+
+    This port forwarding is done using socat, which has to be installed on the host.
+    """
+
     def __init__(self, listen_port: int, target_addr: IPv4Address, target_port: int, protocol: str = "TCP") -> None:
+        """
+        :param listen_port: The port on the host to listen to
+        :param target_addr: The address on the host to redirect the traffic to
+        :param target_port: The port at the target address to redirect the traffic to
+        :param protocol: The communication protocol to use (UDP/TCP)
+        """
         self.listen_port = listen_port
         self.target_addr = target_addr
         self.target_port = target_port
@@ -46,15 +58,17 @@ class PortForwarding:
         self._stderr_thread: Optional[threading.Thread] = None
 
     @property
-    def enabled(self) -> bool:
+    def started(self) -> bool:
+        """
+        Whether the port forwarding has been started and not stopped
+        """
         return self._process is not None
 
     @property
-    def terminated(self) -> bool:
-        return self.enabled and self._process.returncode is not None
-
-    @property
     def cmd(self) -> List[str]:
+        """
+        The command to run to start the port forwarding
+        """
         return [
             "/usr/bin/socat",
             f"{self.protocol.upper()}-LISTEN:{self.listen_port},fork",
@@ -62,9 +76,13 @@ class PortForwarding:
         ]
 
     def start(self) -> None:
-        if self.enabled:
+        """
+        Start the port forwarding
+        """
+        if self.started:
             raise RuntimeError("This port forwarding process has already been started")
 
+        # Starting the port forwarding process
         self._process = subprocess.Popen(
             self.cmd,
             stdout=subprocess.PIPE,
@@ -72,15 +90,12 @@ class PortForwarding:
             universal_newlines=True,
         )
 
-        def stop_logging() -> bool:
-            return self.terminated
-
+        # Starting logging threads
         self._stdout_thread = threading.Thread(
             target=io_logger,
             args=(
                 self._process.stdout,
                 f"socat-{self.listen_port}[{self._process.pid}]-stdout",
-                stop_logging,
             ),
         )
         self._stdout_thread.start()
@@ -90,7 +105,6 @@ class PortForwarding:
             args=(
                 self._process.stderr,
                 f"socat-{self.listen_port}[{self._process.pid}]-stderr",
-                stop_logging,
             ),
         )
         self._stderr_thread.start()
@@ -98,11 +112,19 @@ class PortForwarding:
         LOGGER.info(f"Fort forwarding started successfully with command `{self.cmd}`")
 
     def stop(self) -> None:
-        if not self.enabled:
+        """
+        Stop the port forwarding
+        """
+        if not self.started:
             raise RuntimeError("This port forwarding process has not been started")
 
         if self._process:
             self._process.kill()
+
+            # Closing streams manually to let logging thread finish
+            self._process.stdout.close()
+            self._process.stderr.close()
+
             self._process.wait(5)
             self._process = None
 

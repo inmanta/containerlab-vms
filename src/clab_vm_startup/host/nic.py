@@ -19,6 +19,10 @@ from clab_vm_startup.utils import gen_mac
 
 
 class NetworkInterfaceController:
+    """
+    This class represents an interface on the host.
+    """
+
     def __init__(
         self,
         type: str,

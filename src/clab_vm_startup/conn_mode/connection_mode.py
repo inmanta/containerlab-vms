@@ -26,14 +26,33 @@ class ConnectionMode(str, enum.Enum):
 
 
 class Connection:
+    """
+    Connection class, parent class for all connection modes.
+    A VM has a connection mode, which defines how it sets up its interface and how those
+    are linked to the host and reachable from outside of the host.
+
+    For each supported connection mode, a new class inheriting from this one should be created.
+    """
+
     def __init__(self, mode: ConnectionMode) -> None:
         self.mode = mode
 
     @abstractmethod
     def setup_host(self, host: Host) -> None:
-        pass
+        """
+        This has to be implemented by inheriting classes.
+
+        This method will be called before VM startup, in case the connection mode has to configure
+        the host in some way.
+        """
 
     def qemu_nic_args(self, nic: NetworkInterfaceController) -> List[Tuple[str, str]]:
+        """
+        This can be extended by inheriting classes.
+
+        This method will be called when generating the boot arguments of the VM.  If this connection
+        mode requires some additional arguments, this is the place to set them.
+        """
         return [
             ("-device", f"{nic.type},netdev={nic.device},mac={nic.mac},bus={nic.bus},addr={nic.addr}"),
         ]

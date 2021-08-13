@@ -13,10 +13,8 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
-import logging
 import os
 import signal
-import time
 from pathlib import Path
 from types import FrameType
 
@@ -24,7 +22,7 @@ import click
 from clab_vm_startup.conn_mode.connection_mode import ConnectionMode
 from clab_vm_startup.conn_mode.traffic_control import TrafficControlConnection
 from clab_vm_startup.host.host import Host
-from clab_vm_startup.utils import get_log_formatter_for_stream_handler, setup_logging
+from clab_vm_startup.utils import setup_logging
 from clab_vm_startup.vms.xrv9k import XRV9K
 
 
@@ -88,16 +86,8 @@ def main(
 ) -> None:
     setup_logging(trace)
 
-    logger = logging.getLogger()
-
     # Containerlab will setup some interfaces on its own
     expected_provisioned_nics_count = int(os.getenv("CLAB_INTFS", default=0))
-
-    # User can ask for a delay before booting the vm
-    delay = int(os.getenv("BOOT_DELAY", default=0))
-    if delay:
-        logger.info(f"Delaying VM boot of by {delay} seconds")
-        time.sleep(delay)
 
     # Checking the connection mode entered by the user
     if connection_mode == ConnectionMode.TC:

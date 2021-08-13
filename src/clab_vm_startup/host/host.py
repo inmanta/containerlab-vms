@@ -18,12 +18,19 @@ import re
 import subprocess
 import time
 from pathlib import Path
-from typing import List, Optional, Sequence, Tuple, Union
+from typing import List, Optional, Tuple
 
 LOGGER = logging.getLogger(__name__)
 
 
 class Host:
+    """
+    This class represents the host on which the VM is running.  This host wil be in our case
+    a container.
+
+    This class contains various helper methods for actions that we might want to make when deploying
+    the VM.
+    """
 
     INTERFACES_PATH = Path("/sys/class/net")
 
@@ -33,10 +40,17 @@ class Host:
 
     def run_command(
         self,
-        cmd: Union[List[str], str],
+        cmd: List[str],
         cwd: Optional[str] = None,
         shell: bool = False,
     ) -> Tuple[str, str]:
+        """
+        Run a command on the host and wait for its completion.
+
+        :param cmd: The command to run
+        :param cwd: The current working directory to set before running the command
+        :param shell: Whether to run this command in a shell or not
+        """
         LOGGER.debug(f"Running the following command on the host: {cmd}")
         process = subprocess.Popen(
             cmd,
@@ -47,13 +61,30 @@ class Host:
         return process.communicate()
 
     def has_interface(self, name: str) -> bool:
+        """
+        Check if the host has the provided interface
+
+        :param name: The name of the interface we are checking the existence of
+        """
         interface = self.INTERFACES_PATH / Path(name)
         return interface.exists()
 
-    def get_interfaces(self, pattern: str = "*") -> Sequence[str]:
+    def get_interfaces(self, pattern: str = "*") -> List[str]:
+        """
+        Get all the interfaces of the host matching a pattern.
+
+        :param pattern: A pattern to match only some interfaces
+        """
         return [interface.name for interface in self.INTERFACES_PATH.glob(pattern)]
 
-    def wait_provisioned_nics(self, timeout: int = 60) -> Sequence[str]:
+    def wait_provisioned_nics(self, timeout: int = 60) -> List[str]:
+        """
+        The host can expect some nics to be provisioned by an external user (not this process, clab for example).
+        This methods wait for those nics to appear.
+        The amount of nics we expect is set in the constructor: self._expected_provisioned_nics_count
+
+        :param timeout: Time after which we shouldn't wait for the nics anymore, and raise a TimeoutError.
+        """
         start = time.time()
         while time.time() - start < timeout:
             LOGGER.debug("Waiting for provisioned nics to show up")
@@ -81,6 +112,13 @@ class Host:
 
     @property
     def highest_provisioned_nic_num(self) -> int:
+        """
+        Get the highest interface number from all the provisoned one.  The interface number
+        is X in ethX.
+
+        To get the highest interface number, this property first waits for all the expected
+        provisoned interfaces to show up.
+        """
         if self._highest_provisioned_nic_num is not None:
             return self._highest_provisioned_nic_num
 

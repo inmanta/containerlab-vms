@@ -13,11 +13,12 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
-import colorlog
 import logging
 import random
 import sys
-from typing import IO, Callable
+from typing import IO
+
+import colorlog
 
 
 def gen_mac(last_octet: int = 0):
@@ -32,14 +33,16 @@ def gen_mac(last_octet: int = 0):
     )
 
 
-def io_logger(stream: IO[str], logger_name: str, stop: Callable[[], bool]) -> None:
+def io_logger(stream: IO[str], logger_name: str) -> None:
+    """
+    Helper function to be called as a thread, used to log any lines coming from the given stream.
+    The function will exit when the stream are closed.
+
+    :param stream: The stream to log
+    :param logger_name: The name to give to the logs
+    """
     logger = logging.getLogger(logger_name)
-
-    while not stop():
-        line = stream.readline().strip()
-        if not line:
-            continue
-
+    for line in stream:
         logger.debug(line)
 
 
@@ -49,8 +52,8 @@ def is_on_tty() -> bool:
 
 def get_log_formatter_for_stream_handler(timed: bool) -> logging.Formatter:
     """
-        Copied from 
-        https://github.com/inmanta/inmanta-core/blob/2d18cc42c8b64b603e84453a7776bebdda3ade48/src/inmanta/app.py#L614
+    Copied from
+    https://github.com/inmanta/inmanta-core/blob/2d18cc42c8b64b603e84453a7776bebdda3ade48/src/inmanta/app.py#L614
     """
     log_format = "%(asctime)s " if timed else ""
     if is_on_tty():
@@ -69,8 +72,8 @@ def get_log_formatter_for_stream_handler(timed: bool) -> logging.Formatter:
 
 def get_default_stream_handler() -> logging.StreamHandler:
     """
-        Copied from 
-        https://github.com/inmanta/inmanta-core/blob/2d18cc42c8b64b603e84453a7776bebdda3ade48/src/inmanta/app.py#L586
+    Copied from
+    https://github.com/inmanta/inmanta-core/blob/2d18cc42c8b64b603e84453a7776bebdda3ade48/src/inmanta/app.py#L586
     """
     stream_handler = logging.StreamHandler(stream=sys.stdout)
     stream_handler.setLevel(logging.INFO)
@@ -82,6 +85,11 @@ def get_default_stream_handler() -> logging.StreamHandler:
 
 
 def setup_logging(trace: bool) -> None:
+    """
+    Setup the logging for the current process, if trace is true the logging level is debug, else it is info.
+
+    :param trace: Whether to have debug log level or not
+    """
     stream_handler = get_default_stream_handler()
     logging.root.handlers = []
     logging.root.addHandler(stream_handler)

@@ -31,10 +31,15 @@ LOGGER = logging.getLogger(__name__)
 
 
 class XRV9K(VirtualRouter):
+    """
+    This class represents a Cisco XRV9K virtual router
+    """
 
     ROUTER_CONFIG_PATH = Path("/router-config/iosxr_config.txt")
     ROUTER_CONFIG_ISO_PATH = Path("/router-config.iso")
     CONFIG_TIMEOUT = 20 * 60  # 20 minutes
+
+    SERIAL_CONSOLE_COUNT = 4  # Number of serial console to open, cisco has 4 serial consoles
 
     def __init__(
         self,
@@ -48,6 +53,17 @@ class XRV9K(VirtualRouter):
         password: str,
         hostname: str,
     ) -> None:
+        """
+        :param host: The host on which we deploy this VM
+        :param connection: The type of connection to setup between the host and the vm
+        :param disk_image: The path to the disk image of the vm
+        :param vcpus: The number of virtual cpus to give to the vm
+        :param ram: The amount of ram (MB) to give to the vm
+        :param nics: The amount of network interface to attach to the vm
+        :param username: The username of the account to create on the router
+        :param password: The password of the account to create on the router
+        :param hostname: The hostname to set on the router
+        """
         super().__init__(
             host,
             connection,
@@ -85,8 +101,13 @@ class XRV9K(VirtualRouter):
         self.password = password
         self.hostname = hostname
 
+        self._xr_console: Optional[Telnet] = None
+
     @property
     def _mgmt_interface_boot_args(self) -> List[Tuple[str, str]]:
+        """
+        Extending the mgmt interfaces config with two dummy interfaces
+        """
         boot_args = super()._mgmt_interface_boot_args
         boot_args.extend(
             [
@@ -100,6 +121,9 @@ class XRV9K(VirtualRouter):
 
     @property
     def boot_args(self) -> List[str]:
+        """
+        Extending the boot args with the config disk and some options for cisco
+        """
         args = super().boot_args
 
         args.extend(
@@ -110,14 +134,6 @@ class XRV9K(VirtualRouter):
                 "order=c",
                 "-drive",
                 f"file={str(self.ROUTER_CONFIG_ISO_PATH)},media=cdrom,index=2",
-                "-serial",
-                "telnet:0.0.0.0:5000,server,nowait",
-                "-serial",
-                "telnet:0.0.0.0:5001,server,nowait",
-                "-serial",
-                "telnet:0.0.0.0:5002,server,nowait",
-                "-serial",
-                "telnet:0.0.0.0:5003,server,nowait",
             ]
         )
 
@@ -162,7 +178,8 @@ class XRV9K(VirtualRouter):
             LOGGER.warning(f"Got some error while running mkisofs: {stderr}")
 
     def post_start(self) -> None:
-        xr_console = Telnet("127.0.0.1", 5000, timeout=5)
+        if self._xr_console is None:
+            self._xr_console = self.get_serial_console_connection()
 
         console_logger = logging.getLogger(self.hostname)
 
@@ -184,7 +201,7 @@ class XRV9K(VirtualRouter):
             if time.time() - start_time > self.CONFIG_TIMEOUT:
                 raise TimeoutError("Timeout reached while waiting for router config to be applied")
 
-            _, match, res = xr_console.expect([cvac_config_regex], timeout=1)
+            _, match, res = self._xr_console.expect([cvac_config_regex], timeout=1)
 
             data = unfinished_line + res.decode("utf-8")
             if data == "":
@@ -222,17 +239,16 @@ class XRV9K(VirtualRouter):
 
             raise RuntimeError(f"Unexpected match while waiting for cvac config to complete, stage is {stage}: {match.string}")
 
-        xr_console.close()
-
     def generate_rsa_key(self) -> None:
         LOGGER.info("Configuring rsa key")
-        xr_console = Telnet("127.0.0.1", 5000, timeout=5)
+        if self._xr_console is None:
+            self._xr_console = self.get_serial_console_connection()
 
         def wait_write(cmd: str, wait: Optional[str] = "#") -> None:
             if wait is not None:
-                xr_console.read_until(wait.encode())
+                self._xr_console.read_until(wait.encode())
 
-            xr_console.write(f"{cmd}\r".encode())
+            self._xr_console.write(f"{cmd}\r".encode())
 
         wait_write("", wait=None)
 
@@ -243,7 +259,7 @@ class XRV9K(VirtualRouter):
         wait_write("crypto key generate rsa")
 
         # check if we are prompted to overwrite current keys
-        ridx, match, res = xr_console.expect(
+        ridx, match, res = self._xr_console.expect(
             [b"How many bits in the modulus", b"Do you really want to replace them", b"^[^ ]+#"],
             10,
         )
@@ -257,10 +273,11 @@ class XRV9K(VirtualRouter):
 
         wait_write("exit")
 
-        xr_console.close()
-
     def pre_stop(self) -> None:
-        pass
+        if self._xr_console is not None:
+            LOGGER.debug("Closing connection to xr console")
+            self._xr_console.close()
+            self._xr_console = None
 
     def post_stop(self) -> None:
         pass

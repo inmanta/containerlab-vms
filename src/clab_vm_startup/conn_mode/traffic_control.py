@@ -31,6 +31,9 @@ class TrafficControlConnection(Connection):
         super().__init__(ConnectionMode.TC)
 
     def setup_host(self, host: Host) -> None:
+        """
+        For this connection mode, we need to deploy a script to setup the traffic control rules.
+        """
         ifup_script = """
             #!/bin/bash
 
@@ -55,6 +58,9 @@ class TrafficControlConnection(Connection):
         self.TC_TAP_IFUP_PATH.chmod(0o777)
 
     def qemu_nic_args(self, nic: NetworkInterfaceController) -> List[Tuple[str, str]]:
+        """
+        For this connection mode we need to add some tap device, using the previously created script.
+        """
         qemu_args = super().qemu_nic_args(nic)
         qemu_args.append(
             (

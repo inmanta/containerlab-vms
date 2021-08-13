@@ -96,7 +96,7 @@ class Host:
             if interface_match is None:
                 raise RuntimeError(f"Failed to extract interface number from {interface}")
 
-            interface_num = int(interface_match.group(0))
+            interface_num = int(interface_match.group(1))
             if interface_num > self._highest_provisioned_nic_num:
                 self._highest_provisioned_nic_num = interface_num
 

@@ -13,8 +13,10 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
+import colorlog
 import logging
 import random
+import sys
 from typing import IO, Callable
 
 
@@ -39,3 +41,52 @@ def io_logger(stream: IO[str], logger_name: str, stop: Callable[[], bool]) -> No
             continue
 
         logger.debug(line)
+
+
+def is_on_tty() -> bool:
+    return hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
+
+
+def get_log_formatter_for_stream_handler(timed: bool) -> logging.Formatter:
+    """
+        Copied from 
+        https://github.com/inmanta/inmanta-core/blob/2d18cc42c8b64b603e84453a7776bebdda3ade48/src/inmanta/app.py#L614
+    """
+    log_format = "%(asctime)s " if timed else ""
+    if is_on_tty():
+        log_format += "%(log_color)s%(name)-25s%(levelname)-8s%(reset)s %(message)s"
+        formatter = colorlog.ColoredFormatter(
+            log_format,
+            datefmt=None,
+            reset=True,
+            log_colors={"DEBUG": "cyan", "INFO": "green", "WARNING": "yellow", "ERROR": "red", "CRITICAL": "red"},
+        )
+    else:
+        log_format += "%(name)-25s%(levelname)-8s%(message)s"
+        formatter = logging.Formatter(fmt=log_format)
+    return formatter
+
+
+def get_default_stream_handler() -> logging.StreamHandler:
+    """
+        Copied from 
+        https://github.com/inmanta/inmanta-core/blob/2d18cc42c8b64b603e84453a7776bebdda3ade48/src/inmanta/app.py#L586
+    """
+    stream_handler = logging.StreamHandler(stream=sys.stdout)
+    stream_handler.setLevel(logging.INFO)
+
+    formatter = get_log_formatter_for_stream_handler(timed=False)
+    stream_handler.setFormatter(formatter)
+
+    return stream_handler
+
+
+def setup_logging(trace: bool) -> None:
+    stream_handler = get_default_stream_handler()
+    logging.root.handlers = []
+    logging.root.addHandler(stream_handler)
+    logging.root.setLevel(0)
+
+    formatter = get_log_formatter_for_stream_handler(timed=True)
+    stream_handler.setFormatter(formatter)
+    stream_handler.setLevel(logging.DEBUG if trace else logging.INFO)

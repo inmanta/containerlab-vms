@@ -15,13 +15,16 @@
 """
 import logging
 import os
-import sys
+import signal
 import time
 from pathlib import Path
+from types import FrameType
 
 import click
-from clab_vm_startup.conn_mode import ConnectionMode, TrafficControlConnection
-from clab_vm_startup.host import Host
+from clab_vm_startup.conn_mode.connection_mode import ConnectionMode
+from clab_vm_startup.conn_mode.traffic_control import TrafficControlConnection
+from clab_vm_startup.host.host import Host
+from clab_vm_startup.utils import get_log_formatter_for_stream_handler, setup_logging
 from clab_vm_startup.vms.xrv9k import XRV9K
 
 
@@ -83,9 +86,9 @@ def main(
     ram: int,
     connection_mode: str,
 ) -> None:
+    setup_logging(trace)
+
     logger = logging.getLogger()
-    if trace:
-        logger.setLevel(logging.DEBUG)
 
     # Containerlab will setup some interfaces on its own
     expected_provisioned_nics_count = int(os.getenv("CLAB_INTFS", default=0))
@@ -136,10 +139,19 @@ def main(
         password=password,
         hostname=hostname,
     )
-    xrv9k.start()
-    xrv9k.generate_rsa_key()
 
-    sys.exit(0)
+    def handle_stop_signal(signum: int, frame: FrameType):
+        xrv9k.stop()
+
+    signal.signal(signal.SIGTERM, handle_stop_signal)
+    signal.signal(signal.SIGINT, handle_stop_signal)
+
+    try:
+        xrv9k.start()
+        xrv9k.generate_rsa_key()
+    except Exception as e:
+        xrv9k.stop()
+        raise e
 
 
 if __name__ == "__main__":

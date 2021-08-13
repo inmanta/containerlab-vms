@@ -52,7 +52,7 @@ class TrafficControlConnection(Connection):
         """
         ifup_script = dedent(ifup_script.strip("\n"))
         self.TC_TAP_IFUP_PATH.write_text(ifup_script)
-        self.TC_TAP_IFUP_PATH.lchmod(0o777)
+        self.TC_TAP_IFUP_PATH.chmod(0o777)
 
     def qemu_nic_args(self, nic: NetworkInterfaceController) -> List[Tuple[str, str]]:
         qemu_args = super().qemu_nic_args(nic)

@@ -18,7 +18,7 @@ import logging
 import subprocess
 import threading
 from ipaddress import IPv4Address
-from typing import Optional
+from typing import List, Optional
 
 from clab_vm_startup.utils import io_logger
 
@@ -46,19 +46,24 @@ class PortForwarding:
         self._stderr_thread: Optional[threading.Thread] = None
 
     @property
-    def running(self) -> bool:
-        return self._process is not None and self._process.returncode is None
+    def enabled(self) -> bool:
+        return self._process is not None
 
     @property
-    def cmd(self) -> str:
-        return (
-            f"socat {self.protocol.upper()}-LISTEN:{self.listen_port},fork "
-            f"{self.protocol}:{str(self.target_addr)}:{self.target_port}"
-        )
+    def terminated(self) -> bool:
+        return self.enabled and self._process.returncode is not None
+
+    @property
+    def cmd(self) -> List[str]:
+        return [
+            "/usr/bin/socat",
+            f"{self.protocol.upper()}-LISTEN:{self.listen_port},fork",
+            f"{self.protocol}:{str(self.target_addr)}:{self.target_port}",
+        ]
 
     def start(self) -> None:
-        if self.running:
-            raise RuntimeError("This port forwarding process is already running")
+        if self.enabled:
+            raise RuntimeError("This port forwarding process has already been started")
 
         self._process = subprocess.Popen(
             self.cmd,
@@ -68,7 +73,7 @@ class PortForwarding:
         )
 
         def stop_logging() -> bool:
-            return not self.running
+            return self.terminated
 
         self._stdout_thread = threading.Thread(
             target=io_logger,
@@ -93,8 +98,8 @@ class PortForwarding:
         LOGGER.info(f"Fort forwarding started successfully with command `{self.cmd}`")
 
     def stop(self) -> None:
-        if not self.running:
-            raise RuntimeError("This port forwarding process is not running")
+        if not self.enabled:
+            raise RuntimeError("This port forwarding process has not been started")
 
         if self._process:
             self._process.kill()

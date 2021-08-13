@@ -26,7 +26,7 @@ from pathlib import Path
 from telnetlib import Telnet
 from typing import List, Optional, Sequence, Tuple
 
-from clab_vm_startup.conn_mode import Connection
+from clab_vm_startup.conn_mode.connection_mode import Connection
 from clab_vm_startup.host.host import Host
 from clab_vm_startup.host.nic import NetworkInterfaceController
 from clab_vm_startup.host.socat import PortForwarding
@@ -118,7 +118,7 @@ class VirtualRouter:
     @property
     def boot_args(self) -> List[str]:
         qemu_args = [
-            ("qemu-system-x96_64",),
+            ("qemu-system-x86_64",),
             ("-display", "none"),
             ("-machine", "pc"),
             ("-m", str(self.ram)),
@@ -189,13 +189,24 @@ class VirtualRouter:
         self._stderr_thread.start()
 
         # Connecting to qemu monitor
-        self._qemu_monitor = Telnet("127.0.0.1", 4000)
-        LOGGER.debug("Successfully connected to QEMU monitor")
+        max_retry = 5
+        for _ in range(0, max_retry):
+            try:
+                self._qemu_monitor = Telnet("127.0.0.1", 4000)
+                LOGGER.debug("Successfully connected to QEMU monitor")
+                break
+            except ConnectionRefusedError:
+                pass
+
+            time.sleep(1)
+
+        if self._qemu_monitor is None:
+            raise RuntimeError(f"Failed to connect to QEMU monitor after {max_retry} attempts")
 
         LOGGER.debug("Starting port forwarding processes")
         for forwarded_port in self.forwarded_ports:
-            if forwarded_port.running:
-                LOGGER.warning("The following port forwarding process should not be running but " f"is: `{forwarded_port.cmd}`")
+            if forwarded_port.enabled:
+                LOGGER.warning(f"The following port forwarding process should not be enabled but is: `{forwarded_port.cmd}`")
                 continue
 
             forwarded_port.start()
@@ -251,8 +262,8 @@ class VirtualRouter:
         """
         LOGGER.debug("Stopping port forwarding processes")
         for forwarded_port in self.forwarded_ports:
-            if not forwarded_port.running:
-                LOGGER.warning("The following port forwarding process should be running but " f"isn't: `{forwarded_port.cmd}`")
+            if not forwarded_port.enabled:
+                LOGGER.warning(f"The following port forwarding process should be running but isn't: `{forwarded_port.cmd}`")
                 continue
 
             forwarded_port.stop()

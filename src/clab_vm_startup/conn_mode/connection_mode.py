@@ -17,7 +17,8 @@ import enum
 from abc import abstractmethod
 from typing import List, Tuple
 
-from clab_vm_startup.host import Host, NetworkInterfaceController
+from clab_vm_startup.host.host import Host
+from clab_vm_startup.host.nic import NetworkInterfaceController
 
 
 class ConnectionMode(str, enum.Enum):

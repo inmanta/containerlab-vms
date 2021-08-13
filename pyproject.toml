@@ -12,6 +12,7 @@ packages = [
 [tool.poetry.dependencies]
 python = "^3.6"
 click = "^7.0"
+colorlog = "^5.0.1"
 
 [tool.poetry.dev-dependencies]
 inmanta-dev-dependencies = "1.50.0"

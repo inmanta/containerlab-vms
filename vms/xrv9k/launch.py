@@ -86,6 +86,11 @@ def main(
 ) -> None:
     setup_logging(trace)
 
+    # The user can overwrite the config timeout by setting the env variable `CONFIG_TIMEOUT`
+    CONFIG_TIMEOUT_OVERWRITE = os.getenv("CONFIG_TIMEOUT")
+    if CONFIG_TIMEOUT_OVERWRITE is not None:
+        XRV9K.CONFIG_TIMEOUT = CONFIG_TIMEOUT_OVERWRITE
+
     # Containerlab will setup some interfaces on its own
     expected_provisioned_nics_count = int(os.getenv("CLAB_INTFS", default=0))
 

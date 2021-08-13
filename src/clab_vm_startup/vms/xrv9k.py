@@ -198,7 +198,7 @@ class XRV9K(VirtualRouter):
 
         start_time = time.time()
         while not cvac_config_done:
-            if time.time() - start_time > self.CONFIG_TIMEOUT:
+            if time.time() - start_time > self.CONFIG_TIMEOUT and self.CONFIG_TIMEOUT > 0:
                 raise TimeoutError("Timeout reached while waiting for router config to be applied")
 
             _, match, res = self._xr_console.expect([cvac_config_regex], timeout=1)

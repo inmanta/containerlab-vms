@@ -23,14 +23,14 @@ import time
 from abc import abstractmethod
 from ipaddress import IPv4Address, IPv4Network
 from pathlib import Path
-from telnetlib import Telnet
 from typing import List, Optional, Sequence, Tuple
 
 from clab_vm_startup.conn_mode.connection_mode import Connection
+from clab_vm_startup.helpers.telnet_client import TelnetClient
+from clab_vm_startup.helpers.utils import gen_mac, io_logger
 from clab_vm_startup.host.host import Host
 from clab_vm_startup.host.nic import NetworkInterfaceController
 from clab_vm_startup.host.socat import PortForwarding
-from clab_vm_startup.utils import gen_mac, io_logger
 
 LOGGER = logging.getLogger(__name__)
 
@@ -342,7 +342,7 @@ class VirtualRouter:
         shutdown_duration = datetime.timedelta(seconds=stop_time - start_time)
         LOGGER.info(f"VM was successfully shutdown in {str(shutdown_duration)}")
 
-    def get_qemu_monitor_connection(self) -> Telnet:
+    def get_qemu_monitor_connection(self) -> TelnetClient:
         """
         Get a telnet object with an open connection to the qemu monitor.
         The caller of this method has the responsability of closing the connection.
@@ -352,7 +352,8 @@ class VirtualRouter:
         max_retry = 5
         for _ in range(0, max_retry):
             try:
-                qemu_monitor = Telnet("127.0.0.1", self.QEMU_MONITOR_PORT)
+                qemu_monitor = TelnetClient("127.0.0.1", self.QEMU_MONITOR_PORT)
+                qemu_monitor.open()
                 LOGGER.debug("Successfully connected to QEMU monitor")
                 return qemu_monitor
             except ConnectionRefusedError:
@@ -362,7 +363,7 @@ class VirtualRouter:
 
         raise RuntimeError(f"Failed to connect to QEMU monitor after {max_retry} attempts")
 
-    def get_serial_console_connection(self, index: int = 0) -> Telnet:
+    def get_serial_console_connection(self, index: int = 0) -> TelnetClient:
         """
         Get a telnet object with an open connection to a serial console of the vm.
         The caller of this method has the responsability of closing the connection.
@@ -382,7 +383,8 @@ class VirtualRouter:
         max_retry = 5
         for _ in range(0, max_retry):
             try:
-                xr_console = Telnet("127.0.0.1", self.SERIAL_CONSOLE_PORT + index)
+                xr_console = TelnetClient("127.0.0.1", self.SERIAL_CONSOLE_PORT + index)
+                xr_console.open()
                 LOGGER.debug("Successfully connected to serial console")
                 return xr_console
             except ConnectionRefusedError:

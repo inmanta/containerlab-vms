@@ -17,21 +17,21 @@ import logging
 import re
 import time
 from pathlib import Path
-from telnetlib import Telnet
 from textwrap import dedent
-from typing import List, Match, Optional, Pattern, Sequence, Tuple, Union
+from typing import List, Match, Optional, Pattern, Tuple
 
 from clab_vm_startup.conn_mode.connection_mode import Connection
+from clab_vm_startup.helpers.telnet_client import TelnetClient
+from clab_vm_startup.helpers.utils import gen_mac
 from clab_vm_startup.host.host import Host
 from clab_vm_startup.host.socat import Port, PortForwarding
-from clab_vm_startup.utils import gen_mac
 from clab_vm_startup.vms.vr import VirtualRouter
 
 LOGGER = logging.getLogger(__name__)
 
 
 class IOSXRConsole:
-    def __init__(self, serial_console: Telnet, username: str, password: str) -> None:
+    def __init__(self, serial_console: TelnetClient, username: str, password: str) -> None:
         self.username = username
         self.password = password
 
@@ -39,7 +39,6 @@ class IOSXRConsole:
 
         self._console = serial_console
         self._connected = False
-        self.logger = logging.getLogger(f"iosxr[{self._console.host}:{self._console.port}]")
         self._remainder = ""
 
     @property
@@ -50,17 +49,6 @@ class IOSXRConsole:
     def cli_prompt(self) -> str:
         return f"RP/0/RP0/CPU0:{self._hostname}#"
 
-    def _log(self, data: str) -> str:
-        lines = (self._remainder + data).split("\n")
-        if lines:
-            self._remainder = lines[-1]
-            lines = lines[:-1]
-        else:
-            self._remainder = ""
-
-        for line in lines:
-            self.logger.debug(line.strip())
-
     def connect(self) -> None:
         if self.connected:
             raise RuntimeError("This IOS XR console is already connected")
@@ -70,19 +58,17 @@ class IOSXRConsole:
         self.wait_write(self.username, "Username:")
         self.wait_write(self.password, "Password:")
 
-        ridx, match, res = self._console.expect(
-            [b"% User Authentication failed", re.compile(r"RP\/0\/RP0\/CPU0\:(.*)\#".encode())],
+        auth_failed = re.compile("% User Authentication failed")
+        cli_prompt = re.compile(r"RP\/0\/RP0\/CPU0\:(.*)\#")
+        pattern, match, res = self._console.expect(
+            [auth_failed, cli_prompt],
             timeout=10,
         )
-        self._log(res.decode())
-        if not match:
-            raise TimeoutError("Didn't match any of the expected value")
-
-        if ridx == 0:
+        if pattern == auth_failed:
             raise RuntimeError("Failed to connect, authentication failed")
 
-        if ridx == 1:
-            self._hostname = match.group(1).decode()
+        if pattern == cli_prompt:
+            self._hostname = match.group(1)
             self._connected = True
 
     def disconnect(self) -> None:
@@ -99,37 +85,14 @@ class IOSXRConsole:
             self._hostname = None
             self._connected = False
 
-    def wait_show(self, wait: str, timeout: int = 10) -> None:
-        res = self._console.read_until(wait.encode(), timeout=timeout).decode()
-        self._log(res)
-
-        if wait not in res:
-            raise TimeoutError(f"Timeout while waiting for '{wait}'")
-
     def wait_write(self, write: str, wait: Optional[str] = None, timeout: int = 10) -> None:
         if wait is not None:
-            self.wait_show(wait, timeout)
+            self._console.read_until(wait, timeout)
 
-        self._console.write(f"{write}\r".encode())
+        self._console.write(f"{write}\r")
 
-    def expect(
-        self, list: Sequence[Union[Pattern[str], str]], timeout: Optional[float] = None
-    ) -> Tuple[int, Optional[Match[bytes]], str]:
-        # We accept str in input but telnetlib takes bytes, we should convert our strings to bytes
-        byte_list = []
-        for elem in list:
-            if isinstance(elem, str):
-                byte_list.append(elem.encode())
-                continue
-
-            if isinstance(elem, Pattern):
-                byte_list.append(re.compile(elem.pattern.encode()))
-                continue
-
-        ridx, match, res = self._console.expect(byte_list, timeout)
-        data = res.decode()
-        self._log(data)
-        return ridx, match, data
+    def expect(self, expressions: List[Pattern], timeout: Optional[int] = None) -> Tuple[Pattern, Match, str]:
+        return self._console.expect(expressions, timeout)
 
 
 class XRV9K(VirtualRouter):
@@ -203,7 +166,7 @@ class XRV9K(VirtualRouter):
         self.password = password
         self.hostname = hostname
 
-        self._xr_console: Optional[Telnet] = None
+        self._xr_console: Optional[TelnetClient] = None
 
     @property
     def _mgmt_interface_boot_args(self) -> List[Tuple[str, str]]:
@@ -283,58 +246,37 @@ class XRV9K(VirtualRouter):
         if self._xr_console is None:
             self._xr_console = self.get_serial_console_connection()
 
-        console_logger = logging.getLogger(self.hostname)
+        start_time = time.time()
+        timeout: Optional[int] = self.CONFIG_TIMEOUT
+        if timeout <= 0:
+            timeout = None
+
+        self._xr_console.read_until("Not settable: Success", timeout=timeout)
+
+        LOGGER.info("Router has finished booting, waiting for the configuration to be applied")
 
         # Waiting for cvac config to complete
         # The following regex allows us to match logs from cvac on the console
         cvac_config_regex = re.compile(
-            r"RP\/0\/RP0\/CPU0\:(.*): cvac\[([0-9]+)\]: %MGBL-CVAC-4-CONFIG_([A-Z]+) : (.*)".encode()
+            r"RP\/0\/RP0\/CPU0\:(.*): cvac\[([0-9]+)\]: %MGBL-CVAC-4-CONFIG_([A-Z]+) : (.*)"
         )
 
         # Whether the configuration of the router is done
         cvac_config_done = False
 
-        # unfinished_line will contain any previously read data that didn't ends with an "\n".
-        # This is prepended to the next batch of data we read.
-        unfinished_line = ""
-
-        start_time = time.time()
         while not cvac_config_done:
-            if time.time() - start_time > self.CONFIG_TIMEOUT and self.CONFIG_TIMEOUT > 0:
-                raise TimeoutError("Timeout reached while waiting for router config to be applied")
+            remaining_time = timeout
+            if timeout is not None:
+                remaining_time -= time.time() - start_time
 
-            _, match, res = self._xr_console.expect([cvac_config_regex], timeout=1)
-
-            data = unfinished_line + res.decode("utf-8")
-            if data == "":
-                # Nothing got printed since last line
-                continue
-
-            lines = data.split("\n")
-            if lines:
-                # The last line (might be empty) is unfinished
-                unfinished_line = lines[-1]
-
-                # The lines that matter to us are all of them up to the unfinished one
-                lines = lines[:-1]
-            else:
-                # In case we don't have any lines
-                unfinished_line = ""
-
-            for line in lines:
-                # Logging the console output
-                console_logger.debug(line.strip())
-
-            if not match:
-                # We didn't get any match here
-                continue
+            _, match, res = self._xr_console.expect([cvac_config_regex], timeout=remaining_time)
 
             utc, pid, stage, msg = match.groups()
-            if stage == b"START":
+            if stage == "START":
                 LOGGER.info("Router configuration started")
                 continue
 
-            if stage == b"DONE":
+            if stage == "DONE":
                 LOGGER.info("Router configuration completed")
                 cvac_config_done = True
                 continue
@@ -353,19 +295,21 @@ class XRV9K(VirtualRouter):
         console.wait_write("crypto key generate rsa", console.cli_prompt)
 
         # check if we are prompted to overwrite current keys
-        ridx, match, res = console.expect(
+        new_key = re.compile("How many bits in the modulus")
+        key_exists = re.compile("Do you really want to replace them")
+        pattern, match, res = console.expect(
             [
-                "How many bits in the modulus",
-                "Do you really want to replace them",
-                console.cli_prompt,
+                new_key,
+                key_exists,
+                re.compile(console.cli_prompt),
             ],
             10,
         )
         if match:  # got a match!
-            if ridx == 0:
+            if pattern == new_key:
                 console.wait_write("2048", None)
                 LOGGER.info("Rsa key configured")
-            elif ridx == 1:
+            elif pattern == key_exists:
                 console.wait_write("no", None)
                 LOGGER.info("Rsa key was already configured")
 

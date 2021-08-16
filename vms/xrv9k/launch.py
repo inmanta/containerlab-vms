@@ -22,8 +22,8 @@ from types import FrameType
 import click
 from clab_vm_startup.conn_mode.connection_mode import ConnectionMode
 from clab_vm_startup.conn_mode.traffic_control import TrafficControlConnection
+from clab_vm_startup.helpers.utils import setup_logging
 from clab_vm_startup.host.host import Host
-from clab_vm_startup.utils import setup_logging
 from clab_vm_startup.vms.xrv9k import XRV9K
 
 LOGGER = logging.getLogger(__name__)

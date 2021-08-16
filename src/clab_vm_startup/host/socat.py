@@ -20,7 +20,7 @@ import threading
 from ipaddress import IPv4Address
 from typing import List, Optional
 
-from clab_vm_startup.utils import io_logger
+from clab_vm_startup.helpers.utils import io_logger
 
 LOGGER = logging.getLogger(__name__)
 

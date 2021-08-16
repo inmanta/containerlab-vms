@@ -15,7 +15,7 @@
 """
 import math
 
-from clab_vm_startup.utils import gen_mac
+from clab_vm_startup.helpers.utils import gen_mac
 
 
 class NetworkInterfaceController:

@@ -90,7 +90,7 @@ def logs_consumer(
 ) -> None:
     remainder = ""
     while True:
-        # We wait for the newt element in the queue
+        # We wait for a new element in the queue
         data = logs_queue.get(block=True)
 
         # If the element is the end of queue, we stop
@@ -116,13 +116,12 @@ def logs_consumer(
             logger.log(level=log_level, msg=line.strip())
 
     # End of the log queue, we log anything we have left
-    logger.log(level=log_level, msg=remainder + "EOF")
+    logger.log(level=log_level, msg=remainder.strip())
 
 
 def connection_producer(
     sock: socket.socket,
     input_queue: Queue,
-    logs_queue: Queue,
     encoding: str,
 ) -> None:
     while sock.fileno() != -1:
@@ -134,17 +133,11 @@ def connection_producer(
 
         assert isinstance(data, str)
 
-        # Whatever we send should be logged
-        logs_queue.put(data)
-
         data = data.encode(encoding=encoding)
         sent = sock.send(data)
         while sent:
             data = data[sent:]
             sent = sock.send(data)
-
-    # Send an end of queue
-    logs_queue.put(END_OF_QUEUE)
 
 
 def connection_consumer(
@@ -250,7 +243,6 @@ class TelnetClient:
             args=(
                 self._socket,
                 self._sender_queue,
-                self._logs_queue,
                 self.encoding,
             ),
         )

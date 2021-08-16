@@ -31,12 +31,13 @@ from clab_vm_startup.vms.vr import VirtualRouter
 LOGGER = logging.getLogger(__name__)
 
 
-class XRV9K(VirtualRouter):
+class XRV(VirtualRouter):
     """
     This class represents a Cisco XRV9K virtual router
     """
 
     ROUTER_CONFIG_PATH = Path("/router-config/iosxr_config.txt")
+    ROUTER_ADMIN_CONFIG_PATH = Path("/router-config/iosxr_config.txt")
     ROUTER_CONFIG_ISO_PATH = Path("/router-config.iso")
     CONFIG_TIMEOUT = 20 * 60  # 20 minutes
 
@@ -72,7 +73,6 @@ class XRV9K(VirtualRouter):
             vcpus=vcpus,
             ram=ram,
             nics=nics,
-            mgmt_nic_type="virtio-net-pci",
             forwarded_ports=[
                 PortForwarding(
                     listen_port=Port.SSH,
@@ -105,22 +105,6 @@ class XRV9K(VirtualRouter):
         self._xr_console: Optional[TelnetClient] = None
 
     @property
-    def _mgmt_interface_boot_args(self) -> List[Tuple[str, str]]:
-        """
-        Extending the mgmt interfaces config with two dummy interfaces
-        """
-        boot_args = super()._mgmt_interface_boot_args
-        boot_args.extend(
-            [
-                ("-device", f"virtio-net-pci,netdev=ctrl-dummy,id=ctrl-dummy,mac={gen_mac(0)}"),
-                ("-netdev", "tap,ifname=ctrl-dummy,id=ctrl-dummy,script=no,downscript=no"),
-                ("-device", f"virtio-net-pci,netdev=dev-dummy,id=dev-dummy,mac={gen_mac(0)}"),
-                ("-netdev", "tap,ifname=dev-dummy,id=dev-dummy,script=no,downscript=no"),
-            ]
-        )
-        return boot_args
-
-    @property
     def boot_args(self) -> List[str]:
         """
         Extending the boot args with the config disk and some options for cisco
@@ -129,10 +113,6 @@ class XRV9K(VirtualRouter):
 
         args.extend(
             [
-                "-machine",
-                "smm=off",
-                "-boot",
-                "order=c",
                 "-drive",
                 f"file={str(self.ROUTER_CONFIG_ISO_PATH)},media=cdrom,index=2",
             ]
@@ -141,14 +121,16 @@ class XRV9K(VirtualRouter):
         return args
 
     def pre_start(self) -> None:
+        if self.ROUTER_ADMIN_CONFIG_PATH.parent != self.ROUTER_CONFIG_PATH.parent:
+            raise ValueError(
+                "Both admin-config and config file should be located in the same folder.  "
+                f"ROUTER_CONFIG_PATH={self.ROUTER_CONFIG_PATH}  "
+                f"ROUTER_ADMIN_CONFIG_PATH={self.ROUTER_ADMIN_CONFIG_PATH}"
+            )
+
         # Generating config file
         router_config = f"""
             hostname {self.hostname}
-            username {self.username}
-                group root-lr
-                group cisco-support
-                password {self.password}
-            !
             interface MgmtEth0/RP0/CPU0/0
                 ipv4 address {str(self.ip_address)}/{self.ip_network.prefixlen}
                 no shutdown
@@ -171,6 +153,19 @@ class XRV9K(VirtualRouter):
         self.ROUTER_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
         self.ROUTER_CONFIG_PATH.write_text(router_config)
 
+        # Generating admin config file
+        router_admin_config = f"""
+            !! IOS XR Admin Configuration
+            username {self.username}
+                group root-system
+                secret 0 {self.password}
+            !
+            end
+        """
+        router_admin_config = dedent(router_admin_config.strip("\n"))
+        self.ROUTER_ADMIN_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        self.ROUTER_ADMIN_CONFIG_PATH.write_text(router_config)
+
         # Building config iso
         _, stderr = self.host.run_command(
             ["mkisofs", "-l", "-o", str(self.ROUTER_CONFIG_ISO_PATH), str(self.ROUTER_CONFIG_PATH.parent)]
@@ -187,14 +182,15 @@ class XRV9K(VirtualRouter):
         if timeout <= 0:
             timeout = None
 
-        self._xr_console.read_until("Not settable: Success", timeout=timeout)
+        # This is the last line of cisco cryptographic product laws
+        self._xr_console.read_until("export@cisco.com.", timeout=timeout)
 
         LOGGER.info(f"Router {self.hostname} has finished booting, waiting for the configuration to be applied")
 
         # Waiting for cvac config to complete
         # The following regex allows us to match logs from cvac on the console
         cvac_config_regex = re.compile(
-            r"RP\/0\/RP0\/CPU0\:(.*): cvac\[([0-9]+)\]: %MGBL-CVAC-4-CONFIG_([A-Z]+) : (.*)"
+            r"RP\/0\/0\/CPU0\:(.*): cvac\[([0-9]+)\]: %MGBL-CVAC-4-CONFIG_([A-Z]+) : (.*)"
         )
 
         # Whether the configuration of the router is done

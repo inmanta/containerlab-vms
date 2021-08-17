@@ -26,6 +26,7 @@ class IOSXRConsole:
     """
     Helper class for interacting with the IOSXR console.  This requires an open telnet connection.
     """
+
     def __init__(self, serial_console: TelnetClient, username: str, password: str, cli_prefix: str) -> None:
         """
         :param serial_console: The telenet connection already open to the serial console
@@ -78,7 +79,7 @@ class IOSXRConsole:
         if pattern == username_prompt:
             self.wait_write(self.username, None)
             self.wait_write(self.password, "Password:")
-        
+
         pattern, match, _ = self._console.expect(
             [auth_failed, cli_prompt],
             timeout=10,
@@ -151,4 +152,3 @@ class IOSXRConsole:
         elif pattern == key_exists:
             self.wait_write("no", None)
             LOGGER.info("Rsa key was already configured")
-

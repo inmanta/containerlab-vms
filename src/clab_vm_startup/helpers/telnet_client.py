@@ -106,9 +106,9 @@ def logs_consumer(
 ) -> None:
     """
     This function should be executed as a thread and will consume all the logs contained in
-    logs_queue until END_OF_QUEUE object is met.  
-    
-    The function waits for each line to be complete before printing it.  A line is complete 
+    logs_queue until END_OF_QUEUE object is met.
+
+    The function waits for each line to be complete before printing it.  A line is complete
     when we reach :param newline:.
 
     :param logger: The logger to use to log each line.
@@ -119,7 +119,7 @@ def logs_consumer(
     remainder = ""
 
     # This regex matches any of the ansi sequence except the color ones
-    ansi_re = re.compile(r'\033\[(?!\d*m)[^\s]*(\s|\n|\r)')
+    ansi_re = re.compile(r"\033\[(?!\d*m)[^\s]*(\s|\n|\r)")
     while True:
         # We wait for a new element in the queue
         data = logs_queue.get(block=True)
@@ -135,7 +135,7 @@ def logs_consumer(
 
         # Removing any undesirable ansi sequence from the logs
         text = ansi_re.sub("", text)
-        
+
         # Split line by line
         lines = text.split(newline)
         if lines:
@@ -233,6 +233,7 @@ class TelnetClient:
      1. The ability to log any text coming from the socket as soon as a line is complete
      2. All sent and received text (passed through this class's methods) are strings and not bytes
     """
+
     def __init__(
         self,
         host: str,
@@ -400,7 +401,7 @@ class TelnetClient:
         """Read until a given string is encountered or until timeout.
 
         If no match is found, if we reach the end of file, we raise
-        EOFError.  Else, if the timeout expired, we raise a 
+        EOFError.  Else, if the timeout expired, we raise a
         TimeoutError.  The text read up till the exception is raised
         is considered unread.
 
@@ -444,17 +445,17 @@ class TelnetClient:
     def expect(self, expressions: List[Pattern], timeout: Optional[int] = None) -> Tuple[Pattern, Match, str]:
         """Read until one from a list of a regular expressions matches.
 
-        The first argument is a list of regular expressions 
+        The first argument is a list of regular expressions
         (re.RegexObject instances).
         The optional second argument is a timeout, in seconds; default
         is no timeout.
 
-        Return a tuple of three items: the first regular expression 
+        Return a tuple of three items: the first regular expression
         that matches; the match object returned; and the text read up
         till and including the match.
 
         If no match is found, if we reach the end of file, we raise
-        EOFError.  Else, if the timeout expired, we raise a 
+        EOFError.  Else, if the timeout expired, we raise a
         TimeoutError.  The text read up till the exception is raised
         is considered unread.
 
@@ -472,7 +473,9 @@ class TelnetClient:
                         self._unconsumed = data[end:]
                         return pattern, match, data[:end]
         except TimeoutError as e:
-            LOGGER.warning(f"Couldn't find a match for any of '{[expr.pattern for expr in expressions]}' before timeout expired.")
+            LOGGER.warning(
+                f"Couldn't find a match for any of '{[expr.pattern for expr in expressions]}' before timeout expired."
+            )
             raise e
 
     def __enter__(self) -> "TelnetClient":

@@ -18,7 +18,7 @@ import re
 import time
 from pathlib import Path
 from textwrap import dedent
-from typing import List, Match, Optional, Pattern, Tuple
+from typing import List, Optional, Tuple
 
 from clab_vm_startup.conn_mode.connection_mode import Connection
 from clab_vm_startup.helpers.iosxr_console import IOSXRConsole
@@ -193,9 +193,7 @@ class XRV9K(VirtualRouter):
 
         # Waiting for cvac config to complete
         # The following regex allows us to match logs from cvac on the console
-        cvac_config_regex = re.compile(
-            r"RP\/0\/RP0\/CPU0\:(.*): cvac\[([0-9]+)\]: %MGBL-CVAC-4-CONFIG_([A-Z]+) : (.*)"
-        )
+        cvac_config_regex = re.compile(r"RP\/0\/RP0\/CPU0\:(.*): cvac\[([0-9]+)\]: %MGBL-CVAC-4-CONFIG_([A-Z]+) : (.*)")
 
         # Whether the configuration of the router is done
         cvac_config_done = False
@@ -219,37 +217,10 @@ class XRV9K(VirtualRouter):
 
             raise RuntimeError(f"Unexpected match while waiting for cvac config to complete, stage is {stage}: {match.string}")
 
-    def generate_rsa_key(self) -> None:
-        LOGGER.info("Configuring rsa key")
-        if self._xr_console is None:
-            self._xr_console = self.get_serial_console_connection()
-
-        console = IOSXRConsole(self._xr_console, self.username, self.password)
-        console.connect()
-        console.wait_write("")
-        console.wait_write("terminal length 0", console.cli_prompt)
-        console.wait_write("crypto key generate rsa", console.cli_prompt)
-
-        # check if we are prompted to overwrite current keys
-        new_key = re.compile("How many bits in the modulus")
-        key_exists = re.compile("Do you really want to replace them")
-        pattern, match, res = console.expect(
-            [
-                new_key,
-                key_exists,
-                re.compile(console.cli_prompt),
-            ],
-            10,
-        )
-        if match:  # got a match!
-            if pattern == new_key:
-                console.wait_write("2048", None)
-                LOGGER.info("Rsa key configured")
-            elif pattern == key_exists:
-                console.wait_write("no", None)
-                LOGGER.info("Rsa key was already configured")
-
-        console.disconnect()
+        xrv_console = IOSXRConsole(self._xr_console, self.username, self.password, "RP/0/RP0/CPU0")
+        xrv_console.connect()
+        xrv_console.generate_rsa_key()
+        xrv_console.disconnect()
 
     def pre_stop(self) -> None:
         if self._xr_console is not None:

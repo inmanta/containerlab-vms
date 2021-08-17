@@ -37,6 +37,8 @@ NULL = 0
 SE = 240
 SB = 250
 
+ESC = 27  # b\033
+
 
 def process_raw_data(raw_sequence: Iterable[int], socket: socket.socket) -> Iterable[int]:
     sub_negotiation = False
@@ -73,6 +75,10 @@ def process_raw_data(raw_sequence: Iterable[int], socket: socket.socket) -> Iter
                 sub_negotiation = False
 
             # We ignore any other command
+            continue
+
+        if next_byte in (NULL, 17):
+            # We ignore those characters
             continue
 
         if sub_negotiation:
@@ -327,16 +333,20 @@ class TelnetClient:
         raise EOFError("Reached the end of the connection stream")
 
     def read_until(self, match: str, timeout: Optional[int] = None) -> str:
-        offset = 0
-        for data in self.__accumulate_stream(timeout=timeout):
-            matching_index = data.find(match, offset)
-            if matching_index != -1:
-                matching_index += len(match)
-                self._unconsumed = data[matching_index:]
-                return data[:matching_index]
+        try:
+            offset = 0
+            for data in self.__accumulate_stream(timeout=timeout):
+                matching_index = data.find(match, offset)
+                if matching_index != -1:
+                    matching_index += len(match)
+                    self._unconsumed = data[matching_index:]
+                    return data[:matching_index]
 
-            offset = len(data) - len(match)
-            offset = max(offset, 0)
+                offset = len(data) - len(match)
+                offset = max(offset, 0)
+        except TimeoutError as e:
+            LOGGER.error(f"Couldn't find a match for string '{match}' before timeout expired.")
+            raise e
 
     def read_all(self) -> str:
         data = ""
@@ -359,13 +369,17 @@ class TelnetClient:
         return data
 
     def expect(self, expressions: List[Pattern], timeout: Optional[int] = None) -> Tuple[Pattern, Match, str]:
-        for data in self.__accumulate_stream(timeout=timeout):
-            for pattern in expressions:
-                match = pattern.search(data)
-                if match:
-                    end = match.end()
-                    self._unconsumed = data[end:]
-                    return pattern, match, data[:end]
+        try:
+            for data in self.__accumulate_stream(timeout=timeout):
+                for pattern in expressions:
+                    match = pattern.search(data)
+                    if match:
+                        end = match.end()
+                        self._unconsumed = data[end:]
+                        return pattern, match, data[:end]
+        except TimeoutError as e:
+            LOGGER.error(f"Couldn't find a match for any of '{[expr.pattern for expr in expressions]}' before timeout expired.")
+            raise e
 
     def __enter__(self) -> "TelnetClient":
         self.open()

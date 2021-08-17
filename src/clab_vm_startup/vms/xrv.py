@@ -18,12 +18,11 @@ import re
 import time
 from pathlib import Path
 from textwrap import dedent
-from typing import List, Match, Optional, Pattern, Tuple
+from typing import List, Optional
 
 from clab_vm_startup.conn_mode.connection_mode import Connection
 from clab_vm_startup.helpers.iosxr_console import IOSXRConsole
 from clab_vm_startup.helpers.telnet_client import TelnetClient
-from clab_vm_startup.helpers.utils import gen_mac
 from clab_vm_startup.host.host import Host
 from clab_vm_startup.host.socat import Port, PortForwarding
 from clab_vm_startup.vms.vr import VirtualRouter
@@ -36,10 +35,11 @@ class XRV(VirtualRouter):
     This class represents a Cisco XRV9K virtual router
     """
 
-    ROUTER_CONFIG_PATH = Path("/router-config/iosxr_config.txt")
-    ROUTER_ADMIN_CONFIG_PATH = Path("/router-config/iosxr_config.txt")
+    ROUTER_CONFIG_FOLDER_PATH = Path("/router-config/")
+    ROUTER_CONFIG = "iosxr_config.txt"
+    ROUTER_CONFIG_ADMIN = "iosxr_config_admin.txt"
     ROUTER_CONFIG_ISO_PATH = Path("/router-config.iso")
-    CONFIG_TIMEOUT = 20 * 60  # 20 minutes
+    CONFIG_TIMEOUT = 10 * 60  # 10 minutes
 
     SERIAL_CONSOLE_COUNT = 4  # Number of serial console to open, cisco has 4 serial consoles
 
@@ -121,17 +121,12 @@ class XRV(VirtualRouter):
         return args
 
     def pre_start(self) -> None:
-        if self.ROUTER_ADMIN_CONFIG_PATH.parent != self.ROUTER_CONFIG_PATH.parent:
-            raise ValueError(
-                "Both admin-config and config file should be located in the same folder.  "
-                f"ROUTER_CONFIG_PATH={self.ROUTER_CONFIG_PATH}  "
-                f"ROUTER_ADMIN_CONFIG_PATH={self.ROUTER_ADMIN_CONFIG_PATH}"
-            )
+        self.ROUTER_CONFIG_FOLDER_PATH.mkdir(parents=True, exist_ok=True)
 
         # Generating config file
         router_config = f"""
             hostname {self.hostname}
-            interface MgmtEth0/RP0/CPU0/0
+            interface MgmtEth0/0/CPU0/0
                 ipv4 address {str(self.ip_address)}/{self.ip_network.prefixlen}
                 no shutdown
             !
@@ -150,8 +145,7 @@ class XRV(VirtualRouter):
             end
         """
         router_config = dedent(router_config.strip("\n"))
-        self.ROUTER_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        self.ROUTER_CONFIG_PATH.write_text(router_config)
+        (self.ROUTER_CONFIG_FOLDER_PATH / Path(self.ROUTER_CONFIG)).write_text(router_config)
 
         # Generating admin config file
         router_admin_config = f"""
@@ -163,12 +157,11 @@ class XRV(VirtualRouter):
             end
         """
         router_admin_config = dedent(router_admin_config.strip("\n"))
-        self.ROUTER_ADMIN_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        self.ROUTER_ADMIN_CONFIG_PATH.write_text(router_config)
+        (self.ROUTER_CONFIG_FOLDER_PATH / Path(self.ROUTER_CONFIG_ADMIN)).write_text(router_admin_config)
 
         # Building config iso
         _, stderr = self.host.run_command(
-            ["mkisofs", "-l", "-o", str(self.ROUTER_CONFIG_ISO_PATH), str(self.ROUTER_CONFIG_PATH.parent)]
+            ["mkisofs", "-l", "-o", str(self.ROUTER_CONFIG_ISO_PATH), str(self.ROUTER_CONFIG_FOLDER_PATH)]
         )
         if stderr:
             LOGGER.warning(f"Got some error while running mkisofs: {stderr}")
@@ -190,62 +183,43 @@ class XRV(VirtualRouter):
         # Waiting for cvac config to complete
         # The following regex allows us to match logs from cvac on the console
         cvac_config_regex = re.compile(
-            r"RP\/0\/0\/CPU0\:(.*): cvac\[([0-9]+)\]: %MGBL-CVAC-4-CONFIG_([A-Z]+) : (.*)"
+            r"RP\/0\/0\/CPU0:(.*): cvac\[([0-9]+)\]: %MGBL-CVAC-4-CONFIG_([A-Z]+) : "
+            r"Configuration was applied from file /cd0/([^\s]+). "
+            r"See /disk0:/cvac.log for more details."
         )
 
         # Whether the configuration of the router is done
         cvac_config_done = False
+        cvac_config_admin_done = False
 
-        while not cvac_config_done:
+        while not cvac_config_done or not cvac_config_admin_done:
             remaining_time = timeout
             if timeout is not None:
                 remaining_time -= time.time() - start_time
 
             _, match, res = self._xr_console.expect([cvac_config_regex], timeout=remaining_time)
 
-            utc, pid, stage, msg = match.groups()
-            if stage == "START":
-                LOGGER.info("Router configuration started")
-                continue
-
+            utc, pid, stage, config_file = match.groups()
             if stage == "DONE":
-                LOGGER.info("Router configuration completed")
-                cvac_config_done = True
-                continue
+                if config_file == self.ROUTER_CONFIG:
+                    LOGGER.info(f"Router config applied from file {config_file}")
+                    cvac_config_done = True
+                    continue
 
-            raise RuntimeError(f"Unexpected match while waiting for cvac config to complete, stage is {stage}: {match.string}")
+                if config_file == self.ROUTER_CONFIG_ADMIN:
+                    LOGGER.info(f"Router admin config applied from file {config_file}")
+                    cvac_config_admin_done = True
+                    continue
 
-    def generate_rsa_key(self) -> None:
-        LOGGER.info("Configuring rsa key")
-        if self._xr_console is None:
-            self._xr_console = self.get_serial_console_connection()
+            raise RuntimeError(
+                f"Unexpected match while waiting for cvac config to complete: {match.string} "
+                f"(utc='{utc}',pid='{pid}',stage='{stage}',config_file='{config_file}')"
+            )
 
-        console = IOSXRConsole(self._xr_console, self.username, self.password)
-        console.connect()
-        console.wait_write("")
-        console.wait_write("terminal length 0", console.cli_prompt)
-        console.wait_write("crypto key generate rsa", console.cli_prompt)
-
-        # check if we are prompted to overwrite current keys
-        new_key = re.compile("How many bits in the modulus")
-        key_exists = re.compile("Do you really want to replace them")
-        pattern, match, res = console.expect(
-            [
-                new_key,
-                key_exists,
-                re.compile(console.cli_prompt),
-            ],
-            10,
-        )
-        if match:  # got a match!
-            if pattern == new_key:
-                console.wait_write("2048", None)
-                LOGGER.info("Rsa key configured")
-            elif pattern == key_exists:
-                console.wait_write("no", None)
-                LOGGER.info("Rsa key was already configured")
-
-        console.disconnect()
+        xrv_console = IOSXRConsole(self._xr_console, self.username, self.password, "RP/0/0/CPU0")
+        xrv_console.connect()
+        xrv_console.generate_rsa_key()
+        xrv_console.disconnect()
 
     def pre_stop(self) -> None:
         if self._xr_console is not None:

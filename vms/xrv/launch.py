@@ -147,7 +147,6 @@ def main(
 
     try:
         xrv.start()
-        xrv.generate_rsa_key()
     except Exception as e:
         xrv.stop()
         raise e

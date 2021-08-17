@@ -36,7 +36,8 @@ class XRV9K(VirtualRouter):
     This class represents a Cisco XRV9K virtual router
     """
 
-    ROUTER_CONFIG_PATH = Path("/router-config/iosxr_config.txt")
+    ROUTER_CONFIG_FOLDER_PATH = Path("/router-config/")
+    ROUTER_CONFIG = "iosxr_config.txt"
     ROUTER_CONFIG_ISO_PATH = Path("/router-config.iso")
     CONFIG_TIMEOUT = 20 * 60  # 20 minutes
 
@@ -141,6 +142,8 @@ class XRV9K(VirtualRouter):
         return args
 
     def pre_start(self) -> None:
+        self.ROUTER_CONFIG_FOLDER_PATH.mkdir(parents=True, exist_ok=True)
+
         # Generating config file
         router_config = f"""
             hostname {self.hostname}
@@ -168,12 +171,11 @@ class XRV9K(VirtualRouter):
             end
         """
         router_config = dedent(router_config.strip("\n"))
-        self.ROUTER_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        self.ROUTER_CONFIG_PATH.write_text(router_config)
+        (self.ROUTER_CONFIG_FOLDER_PATH / Path(self.ROUTER_CONFIG)).write_text(router_config)
 
         # Building config iso
         _, stderr = self.host.run_command(
-            ["mkisofs", "-l", "-o", str(self.ROUTER_CONFIG_ISO_PATH), str(self.ROUTER_CONFIG_PATH.parent)]
+            ["mkisofs", "-l", "-o", str(self.ROUTER_CONFIG_ISO_PATH), str(self.ROUTER_CONFIG_FOLDER_PATH)]
         )
         if stderr:
             LOGGER.warning(f"Got some error while running mkisofs: {stderr}")

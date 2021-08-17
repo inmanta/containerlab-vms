@@ -41,8 +41,6 @@ class XRV(VirtualRouter):
     ROUTER_CONFIG_ISO_PATH = Path("/router-config.iso")
     CONFIG_TIMEOUT = 10 * 60  # 10 minutes
 
-    SERIAL_CONSOLE_COUNT = 4  # Number of serial console to open, cisco has 4 serial consoles
-
     def __init__(
         self,
         host: Host,

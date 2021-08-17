@@ -1,3 +1,6 @@
+# This file has been copied from hellt/vrnetlab
+# https://github.com/hellt/vrnetlab/blob/5d97c29b0b9ee5c7e9d4a2dc110f6dab12320eb0/makefile-sanity.include
+
 ifdef DOCKER_REGISTRY
 ifneq ($(DOCKER_REGISTRY), $(shell echo $(DOCKER_REGISTRY) | sed -ne '/^[A-Za-z0-9.\/\-]\+\(:[0-9]\+\)\?\([A-Za-z0-9.\/-]\+\)\?$$/p'))
 $(error Bad docker registry URL. Should follow format registry.example.com/foo, registry.example.com:1234 or registry.example.com:1234/foo)

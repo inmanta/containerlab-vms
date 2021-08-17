@@ -1,3 +1,6 @@
+# This file has been copied from hellt/vrnetlab
+# https://github.com/hellt/vrnetlab/blob/353971465a51ff8eebd1001508613816b8fd864d/makefile-install.include
+
 #
 # This Makefile can be included by images that need to run an install phase,
 # i.e. in addition to doing the docker build, we also want to run some stuff

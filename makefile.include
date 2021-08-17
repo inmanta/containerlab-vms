@@ -1,3 +1,6 @@
+# This file has been copied from hellt/vrnetlab
+# https://github.com/hellt/vrnetlab/blob/b63f4d3eb826c06edb09bb749bf51e7aa1a8b120/makefile.include
+
 VR_NAME=$(shell basename $$(pwd))
 IMAGES=$(shell ls $(IMAGE_GLOB) 2>/dev/null)
 NUM_IMAGES=$(shell ls $(IMAGES) | wc -l)

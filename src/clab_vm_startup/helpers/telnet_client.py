@@ -14,6 +14,7 @@
    limitations under the License.
 """
 import logging
+import re
 import select
 import socket
 import time
@@ -41,6 +42,15 @@ ESC = 27  # b\033
 
 
 def process_raw_data(raw_sequence: Iterable[int], socket: socket.socket) -> Iterable[int]:
+    """
+    This function is a helper that takes a stream of bytes (as an integer iterable)
+    and returns a new stream of bytes that can be decoded as text.
+
+    If the byte sequence contains any IAC negotiations, it will decline all of them.
+
+    :param raw_sequence: The sequence of bytes received from the connection
+    :param socket: The socket to which we have to reply with the declined options
+    """
     sub_negotiation = False
     while True:
         next_byte = next(raw_sequence, END_OF_QUEUE)
@@ -94,7 +104,22 @@ def logs_consumer(
     logs_queue: Queue,
     newline: str,
 ) -> None:
+    """
+    This function should be executed as a thread and will consume all the logs contained in
+    logs_queue until END_OF_QUEUE object is met.  
+    
+    The function waits for each line to be complete before printing it.  A line is complete 
+    when we reach :param newline:.
+
+    :param logger: The logger to use to log each line.
+    :param log_level: The logging level to use to log each line.
+    :param logs_queue: The queue in which we will take all the text to log.
+    :param newline: The character to use to detect an end of line.
+    """
     remainder = ""
+
+    # This regex matches any of the ansi sequence except the color ones
+    ansi_re = re.compile(r'\033\[(?!\d*m)[^\s]*(\s|\n|\r)')
     while True:
         # We wait for a new element in the queue
         data = logs_queue.get(block=True)
@@ -108,6 +133,9 @@ def logs_consumer(
         # Prepend the new elements with the remainder from before
         text = remainder + data
 
+        # Removing any undesirable ansi sequence from the logs
+        text = ansi_re.sub("", text)
+        
         # Split line by line
         lines = text.split(newline)
         if lines:
@@ -125,11 +153,19 @@ def logs_consumer(
     logger.log(level=log_level, msg=remainder.strip())
 
 
-def connection_producer(
+def sender(
     sock: socket.socket,
     input_queue: Queue,
     encoding: str,
 ) -> None:
+    """
+    This function should be executed as a thread and will send all the text contained in the
+    input_queue until the socket is closed.
+
+    :param sock: The socket to send the text to
+    :param input_queue: The queue the message to send are coming from
+    :param encoding: The encoding to use when converting text to bytes
+    """
     while sock.fileno() != -1:
         try:
             data = input_queue.get(block=True, timeout=1)
@@ -146,12 +182,22 @@ def connection_producer(
             sent = sock.send(data)
 
 
-def connection_consumer(
+def receiver(
     sock: socket.socket,
     output_queue: Queue,
     logs_queue: Queue,
     encoding: str,
 ) -> None:
+    """
+    This function should be executed as a thread and will receive all the text coming from
+    a socket and pass it to an output_queue and a logs_queue.  When the socket is closed
+    it sends an END_OF_QUEUE object to both output and logs queues.
+
+    :param sock: The socket we are receiving the packets from
+    :param output_queue: The queue in which we should send all the decoded packets
+    :param logs_queue: Another queue in which we should send all the decoded packets
+    :param encoding: The encoding to use to decode the bytes into text
+    """
     while sock.fileno() != -1:
         # We only pass one socket, once the selct call unblock, there is something
         # to read on the socket
@@ -181,9 +227,27 @@ def connection_consumer(
 
 
 class TelnetClient:
+    """
+    This is a custom telnet client, highly inspired from telnetlib.  Its main two differences from the
+    original library are:
+     1. The ability to log any text coming from the socket as soon as a line is complete
+     2. All sent and received text (passed through this class's methods) are strings and not bytes
+    """
     def __init__(
-        self, host: str, port: int, log_level: int = logging.DEBUG, newline: str = "\n", encoding: str = "utf-8"
+        self,
+        host: str,
+        port: int,
+        log_level: int = logging.DEBUG,
+        newline: str = "\n",
+        encoding: str = "utf-8",
     ) -> None:
+        """
+        :param host: The host we wish to connect to
+        :param port: The port on the host we whish to connect to
+        :param log_level: The logging level for all output comming from the host socket
+        :param newline: The character that separates lines from one another
+        :param encoding: The encoding that is used to convert text to bytes on the host
+        """
         self.host = host
         self.port = port
 
@@ -233,7 +297,7 @@ class TelnetClient:
 
         self._receiver_queue = Queue()
         self._receiver_thread = Thread(
-            target=connection_consumer,
+            target=receiver,
             args=(
                 self._socket,
                 self._receiver_queue,
@@ -245,7 +309,7 @@ class TelnetClient:
 
         self._sender_queue = Queue()
         self._sender_thread = Thread(
-            target=connection_producer,
+            target=sender,
             args=(
                 self._socket,
                 self._sender_queue,
@@ -333,6 +397,14 @@ class TelnetClient:
         raise EOFError("Reached the end of the connection stream")
 
     def read_until(self, match: str, timeout: Optional[int] = None) -> str:
+        """Read until a given string is encountered or until timeout.
+
+        If no match is found, if we reach the end of file, we raise
+        EOFError.  Else, if the timeout expired, we raise a 
+        TimeoutError.  The text read up till the exception is raised
+        is considered unread.
+
+        """
         try:
             offset = 0
             for data in self.__accumulate_stream(timeout=timeout):
@@ -345,10 +417,11 @@ class TelnetClient:
                 offset = len(data) - len(match)
                 offset = max(offset, 0)
         except TimeoutError as e:
-            LOGGER.error(f"Couldn't find a match for string '{match}' before timeout expired.")
+            LOGGER.warning(f"Couldn't find a match for string '{match}' before timeout expired.")
             raise e
 
     def read_all(self) -> str:
+        """Read all data until EOF"""
         data = ""
         next_data = self._unconsumed
 
@@ -369,6 +442,27 @@ class TelnetClient:
         return data
 
     def expect(self, expressions: List[Pattern], timeout: Optional[int] = None) -> Tuple[Pattern, Match, str]:
+        """Read until one from a list of a regular expressions matches.
+
+        The first argument is a list of regular expressions 
+        (re.RegexObject instances).
+        The optional second argument is a timeout, in seconds; default
+        is no timeout.
+
+        Return a tuple of three items: the first regular expression 
+        that matches; the match object returned; and the text read up
+        till and including the match.
+
+        If no match is found, if we reach the end of file, we raise
+        EOFError.  Else, if the timeout expired, we raise a 
+        TimeoutError.  The text read up till the exception is raised
+        is considered unread.
+
+        If a regular expression ends with a greedy match (e.g. '.*')
+        or if more than one expression can match the same input, the
+        results are undeterministic, and may depend on the I/O timing.
+
+        """
         try:
             for data in self.__accumulate_stream(timeout=timeout):
                 for pattern in expressions:
@@ -378,7 +472,7 @@ class TelnetClient:
                         self._unconsumed = data[end:]
                         return pattern, match, data[:end]
         except TimeoutError as e:
-            LOGGER.error(f"Couldn't find a match for any of '{[expr.pattern for expr in expressions]}' before timeout expired.")
+            LOGGER.warning(f"Couldn't find a match for any of '{[expr.pattern for expr in expressions]}' before timeout expired.")
             raise e
 
     def __enter__(self) -> "TelnetClient":

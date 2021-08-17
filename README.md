@@ -1,6 +1,6 @@
 # containerlab-vms
 
-This project is meant to help building containerlab compatible containers, running virtual routers inside of them.  This has been highly inspired by the vrntelab project.  The working principle is the same as the aforementioned project, but the inner structure of the code has been reviewed.
+This project is meant to help building containerlab compatible containers, running virtual routers inside of them.  This has been highly inspired by the vrntelab project.  The working principle is the same as the aforementioned project, but the inner structure of the code has been revised to fix stability issues we have encountered.
 
 ## Supported vendors
 

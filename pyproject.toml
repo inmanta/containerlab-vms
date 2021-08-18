@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "containerlab-vms"
-version = "0.0.2"
+version = "0.0.1"
 description = "Toolbox for starting virtual routers inside containers."
 authors = ["Inmanta <code@inmanta.com>"]
 license = "Apache-2.0"

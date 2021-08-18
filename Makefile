@@ -22,7 +22,7 @@ format:
 mypy:
 	MYPYPATH=src python -m mypy --html-report mypy/out/clab_vm_startup -p clab_vm_startup; \
 	for d in vms/*/; do \
-		MYPYPATH=src python -m mypy --html-report mypy/out/$$d $$d/launch.py; \
+		MYPYPATH=vms python -m mypy --html-report mypy/out/$$d $$d/launch.py; \
 	done
 
 docker-image:

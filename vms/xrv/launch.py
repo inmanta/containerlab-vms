@@ -67,7 +67,7 @@ LOGGER = logging.getLogger(__name__)
 )
 @click.option(
     "--ram",
-    default=12228,
+    default=3072,
     show_default=True,
     help="Amount of RAM (in MB) to use",
 )

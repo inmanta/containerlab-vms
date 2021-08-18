@@ -34,6 +34,8 @@ class TrafficControlConnection(Connection):
         """
         For this connection mode, we need to deploy a script to setup the traffic control rules.
         """
+        # The script below comes from hellt/vrnetlab
+        # https://github.com/hellt/vrnetlab/blob/b2292c7ede4a18118587abd7b78498ea8b203e8e/common/vrnetlab.py#L312
         ifup_script = """
             #!/bin/bash
 

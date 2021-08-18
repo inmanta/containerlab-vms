@@ -1,4 +1,4 @@
-# This file has been copied from hellt/vrnetlab
+# This file has been copied from plajjan/vrnetlab
 # https://github.com/plajjan/vrnetlab/blob/b63f4d3eb826c06edb09bb749bf51e7aa1a8b120/makefile.include
 
 VR_NAME=$(shell basename $$(pwd))

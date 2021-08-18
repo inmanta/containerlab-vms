@@ -1,4 +1,4 @@
-# This file has been copied from hellt/vrnetlab
+# This file has been copied from plajjan/vrnetlab
 # https://github.com/plajjan/vrnetlab/blob/5d97c29b0b9ee5c7e9d4a2dc110f6dab12320eb0/makefile-sanity.include
 
 ifdef DOCKER_REGISTRY

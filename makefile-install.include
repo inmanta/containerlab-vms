@@ -1,5 +1,5 @@
-# This file has been copied from hellt/vrnetlab
-# https://github.com/hellt/vrnetlab/blob/353971465a51ff8eebd1001508613816b8fd864d/makefile-install.include
+# This file has been copied from plajjan/vrnetlab
+# https://github.com/plajjan/vrnetlab/blob/4ee40a671ae88453079e5aff4ad4b4c106f0caad/makefile-install.include
 
 #
 # This Makefile can be included by images that need to run an install phase,

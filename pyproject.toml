@@ -1,10 +1,10 @@
 [tool.poetry]
 name = "containerlab-vms"
-version = "0.0.1"
+version = "0.0.2"
 description = "Toolbox for starting virtual routers inside containers."
 authors = ["Inmanta <code@inmanta.com>"]
 license = "Apache-2.0"
-include=[]
+include=["src/clab_vm_startup/py.typed"]
 packages = [
     { include = "clab_vm_startup", from = "src" },
 ]
@@ -16,6 +16,7 @@ colorlog = "^5.0.1"
 
 [tool.poetry.dev-dependencies]
 inmanta-dev-dependencies = "1.50.0"
+mypy = "^0.910"
 
 [tool.isort]
 multi_line_output = 3

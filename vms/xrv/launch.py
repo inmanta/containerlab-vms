@@ -19,7 +19,7 @@ import signal
 from pathlib import Path
 from types import FrameType
 
-import click
+import click  # type: ignore
 from clab_vm_startup.conn_mode.connection_mode import ConnectionMode
 from clab_vm_startup.conn_mode.traffic_control import TrafficControlConnection
 from clab_vm_startup.helpers.utils import setup_logging

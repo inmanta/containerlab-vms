@@ -122,7 +122,10 @@ class PortForwarding:
             self._process.kill()
 
             # Closing streams manually to let logging thread finish
+            assert self._process.stdout is not None
             self._process.stdout.close()
+
+            assert self._process.stderr is not None
             self._process.stderr.close()
 
             self._process.wait(5)

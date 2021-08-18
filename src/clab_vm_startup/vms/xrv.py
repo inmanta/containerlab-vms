@@ -16,6 +16,7 @@
 import logging
 import re
 import time
+from ipaddress import IPv4Address
 from pathlib import Path
 from textwrap import dedent
 from typing import List, Optional
@@ -74,23 +75,23 @@ class XRV(VirtualRouter):
             forwarded_ports=[
                 PortForwarding(
                     listen_port=Port.SSH,
-                    target_addr="127.0.0.1",
+                    target_addr=IPv4Address("127.0.0.1"),
                     target_port=Port.SSH + 2000,
                 ),
                 PortForwarding(
                     listen_port=Port.SNMP,
-                    target_addr="127.0.0.1",
+                    target_addr=IPv4Address("127.0.0.1"),
                     target_port=Port.SNMP + 2000,
                     protocol="UDP",
                 ),
                 PortForwarding(
                     listen_port=Port.NETCONF,
-                    target_addr="127.0.0.1",
+                    target_addr=IPv4Address("127.0.0.1"),
                     target_port=Port.NETCONF + 2000,
                 ),
                 PortForwarding(
                     listen_port=Port.GNMI,
-                    target_addr="127.0.0.1",
+                    target_addr=IPv4Address("127.0.0.1"),
                     target_port=17_400,
                 ),
             ],
@@ -169,9 +170,10 @@ class XRV(VirtualRouter):
             self._xr_console = self.get_serial_console_connection()
 
         start_time = time.time()
-        timeout: Optional[int] = self.CONFIG_TIMEOUT
-        if timeout <= 0:
+        if self.CONFIG_TIMEOUT <= 0:
             timeout = None
+        else:
+            timeout = self.CONFIG_TIMEOUT
 
         # This is the last line of cisco cryptographic product laws
         self._xr_console.read_until("export@cisco.com.", timeout=timeout)
@@ -191,8 +193,8 @@ class XRV(VirtualRouter):
         cvac_config_admin_done = False
 
         while not cvac_config_done or not cvac_config_admin_done:
-            remaining_time = timeout
-            if timeout is not None:
+            remaining_time = float(timeout) if timeout is not None else None
+            if remaining_time is not None:
                 remaining_time -= time.time() - start_time
 
             _, match, res = self._xr_console.expect([cvac_config_regex], timeout=remaining_time)

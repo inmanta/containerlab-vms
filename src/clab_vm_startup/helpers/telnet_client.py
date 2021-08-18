@@ -20,7 +20,7 @@ import socket
 import time
 from queue import Empty, Queue
 from threading import Thread
-from typing import Iterable, List, Match, Optional, Pattern, Tuple
+from typing import Iterable, Iterator, List, Match, Optional, Pattern, Tuple, Union
 
 LOGGER = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ SB = 250
 ESC = 27  # b\033
 
 
-def process_raw_data(raw_sequence: Iterable[int], socket: socket.socket) -> Iterable[int]:
+def process_raw_data(raw_sequence: Iterator[int], socket: socket.socket) -> Iterable[int]:
     """
     This function is a helper that takes a stream of bytes (as an integer iterable)
     and returns a new stream of bytes that can be decoded as text.
@@ -326,6 +326,7 @@ class TelnetClient:
             raise RuntimeError("Can not close a connection that is not open")
 
         # self._socket.shutdown(socket.SHUT_RDWR)
+        assert self._socket is not None
         self._socket.close()
         self._socket = None
 
@@ -354,9 +355,10 @@ class TelnetClient:
         self._logs_queue = None
 
     def write(self, s: str) -> None:
+        assert self._sender_queue is not None
         self._sender_queue.put(s)
 
-    def __accumulate_stream(self, timeout: Optional[int] = None) -> Iterable[str]:
+    def __accumulate_stream(self, timeout: Optional[float] = None) -> Iterable[str]:
         """
         Consume the receiver queue lazily.  Each generated value contains all unconsumed data up
         to the last value we received from the queue.
@@ -365,7 +367,7 @@ class TelnetClient:
         :raises EOFError: If we reached the end of the stream
         """
         data = ""
-        next_data = self._unconsumed
+        next_data: Union[str, object] = self._unconsumed
 
         start = time.time()
         while next_data != END_OF_QUEUE:
@@ -390,6 +392,7 @@ class TelnetClient:
                 continue
 
             try:
+                assert self._receiver_queue is not None
                 next_data = self._receiver_queue.get(timeout=time_remaining)
             except Empty:
                 raise TimeoutError("Timeout error while waiting for matching string")
@@ -397,7 +400,7 @@ class TelnetClient:
         self._readable = False
         raise EOFError("Reached the end of the connection stream")
 
-    def read_until(self, match: str, timeout: Optional[int] = None) -> str:
+    def read_until(self, match: str, timeout: Optional[float] = None) -> str:
         """Read until a given string is encountered or until timeout.
 
         If no match is found, if we reach the end of file, we raise
@@ -417,14 +420,20 @@ class TelnetClient:
 
                 offset = len(data) - len(match)
                 offset = max(offset, 0)
+
         except TimeoutError as e:
             LOGGER.warning(f"Couldn't find a match for string '{match}' before timeout expired.")
             raise e
+        except EOFError as e:
+            LOGGER.warning(f"Couldn't find a match for string '{match}' before end of stream.")
+            raise e
+
+        raise RuntimeError("Shouldn't have got this far")
 
     def read_all(self) -> str:
         """Read all data until EOF"""
         data = ""
-        next_data = self._unconsumed
+        next_data: Union[str, object] = self._unconsumed
 
         while next_data != END_OF_QUEUE:
             assert isinstance(next_data, str)
@@ -436,13 +445,14 @@ class TelnetClient:
                 next_data = END_OF_QUEUE
                 continue
 
+            assert self._receiver_queue is not None
             next_data = self._receiver_queue.get()
 
         self._readable = False
         self._unconsumed = ""
         return data
 
-    def expect(self, expressions: List[Pattern], timeout: Optional[int] = None) -> Tuple[Pattern, Match, str]:
+    def expect(self, expressions: List[Pattern], timeout: Optional[float] = None) -> Tuple[Pattern, Match, str]:
         """Read until one from a list of a regular expressions matches.
 
         The first argument is a list of regular expressions
@@ -472,11 +482,17 @@ class TelnetClient:
                         end = match.end()
                         self._unconsumed = data[end:]
                         return pattern, match, data[:end]
+
         except TimeoutError as e:
             LOGGER.warning(
                 f"Couldn't find a match for any of '{[expr.pattern for expr in expressions]}' before timeout expired."
             )
             raise e
+        except EOFError as e:
+            LOGGER.warning(f"Couldn't find a match for any of '{[expr.pattern for expr in expressions]}' before end of stream.")
+            raise e
+
+        raise RuntimeError("Shouldn't have got this far")
 
     def __enter__(self) -> "TelnetClient":
         self.open()

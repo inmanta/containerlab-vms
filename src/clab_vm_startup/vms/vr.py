@@ -295,7 +295,10 @@ class VirtualRouter:
                 self._boot_process.kill()
 
             # Closing streams manually to let logging thread finish
+            assert self._boot_process.stdout is not None
             self._boot_process.stdout.close()
+
+            assert self._boot_process.stderr is not None
             self._boot_process.stderr.close()
 
             self._boot_process.wait(5)

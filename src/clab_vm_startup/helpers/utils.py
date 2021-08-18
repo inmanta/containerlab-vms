@@ -18,10 +18,10 @@ import random
 import sys
 from typing import IO
 
-import colorlog
+import colorlog  # type: ignore
 
 
-def gen_mac(last_octet: int = 0):
+def gen_mac(last_octet: int = 0) -> str:
     """
     Generate a random MAC address that is in the qemu OUI space and that
     has the given last octet.

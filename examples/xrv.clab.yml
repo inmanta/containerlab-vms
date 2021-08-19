@@ -1,0 +1,59 @@
+name: xrv
+topology:
+  nodes:
+    subscriber-east-1:
+      kind: linux
+      image: inmantaci/nfv-test-api:0.6.1
+      cmd: sh -c "/bin/sleep 5 && /usr/local/bin/python /home/user/nfv-test-api/mac.py east-1 && /bin/sleep 5  && /home/user/nfv-test-api/env/bin/python -m nfv_test_api.main --config nfv-test-api/config.yaml"
+      binds:
+        - ./config/mac.py:/home/user/nfv-test-api/mac.py
+      ports:
+        - 2001:8080
+      mgmt_ipv4: 172.20.20.22
+    subscriber-east-2:
+      kind: linux
+      image: inmantaci/nfv-test-api:0.6.1
+      cmd: sh -c "/bin/sleep 5 && /usr/local/bin/python /home/user/nfv-test-api/mac.py east-2 && /bin/sleep 5  && /home/user/nfv-test-api/env/bin/python -m nfv_test_api.main --config nfv-test-api/config.yaml"
+      binds:
+        - ./config/mac.py:/home/user/nfv-test-api/mac.py
+      ports:
+        - 2002:8080
+      mgmt_ipv4: 172.20.20.23
+    subscriber-west-1:
+      kind: linux
+      image: inmantaci/nfv-test-api:0.6.1
+      cmd: sh -c "/bin/sleep 5 && /usr/local/bin/python /home/user/nfv-test-api/mac.py west-1 && /bin/sleep 5  && /home/user/nfv-test-api/env/bin/python -m nfv_test_api.main --config nfv-test-api/config.yaml"
+      binds:
+        - ./config/mac.py:/home/user/nfv-test-api/mac.py
+      ports:
+        - 2003:8080
+      mgmt_ipv4: 172.20.20.32
+    subscriber-west-2:
+      kind: linux
+      image: inmantaci/nfv-test-api:0.6.1
+      cmd: sh -c "/bin/sleep 5 && /usr/local/bin/python /home/user/nfv-test-api/mac.py west-2 && /bin/sleep 5  && /home/user/nfv-test-api/env/bin/python -m nfv_test_api.main --config nfv-test-api/config.yaml"
+      binds:
+        - ./config/mac.py:/home/user/nfv-test-api/mac.py
+      ports:
+        - 2004:8080
+      mgmt_ipv4: 172.20.20.33
+    router-east: 
+      kind: vr-xrv
+      image: containerlab/vr-xrv:6.3.1
+      ports:
+        - 20022:22
+        - 20830:830
+      mgmt_ipv4: 172.20.20.21
+    router-west:
+      kind: vr-xrv
+      image: containerlab/vr-xrv:6.3.1
+      ports:
+        - 21022:22
+        - 21830:830
+      mgmt_ipv4: 172.20.20.31
+  links:
+    - endpoints: ["router-east:eth1", "router-west:eth1"]
+    - endpoints: ["router-east:eth2", "subscriber-east-1:eth1"]
+    - endpoints: ["router-east:eth3", "subscriber-east-2:eth1"]
+    - endpoints: ["router-west:eth2", "subscriber-west-1:eth1"]
+    - endpoints: ["router-west:eth3", "subscriber-west-2:eth1"]

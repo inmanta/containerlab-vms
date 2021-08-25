@@ -38,3 +38,9 @@ To startup the lab, simply run
 sudo clab deploy --topo <lab-file>
 ```  
 Where `<lab-file>` is any of the files in this folder ending in `.clab.yml`.
+
+## nfv-test-api
+
+The subscribers used in those examples are simple containers running [nfv-test-api](https://github.com/inmanta/nfv-test-api).  It offers an http server that creates network namespaces and places interface into these network namespaces on demand.  This is really handy to test the connectivity inside of the lab once routers are correctly configured.
+
+The container as well as the source project are publicly available on [Docker hub](https://hub.docker.com/r/inmantaci/nfv-test-api) and [Github](https://github.com/inmanta/nfv-test-api).

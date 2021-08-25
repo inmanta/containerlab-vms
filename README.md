@@ -164,3 +164,20 @@ When the container is ready, it should display the following line in its logs:
 2021-08-25 08:24:47,165 clab_vm_startup.vms.vr   INFO     VM was successfully started in 0:03:10.046256
 ```
 The time it will take for your container to boot highly depends on how powerful your host machine is and the kind of virtual router your are running.  `xrv9k` images take much longer to boot than `xrv` images.
+
+### 6. Destroy the lab
+Once your are done with your lab, you can destroy it easily using `clab destroy` command.  Pay attention that you need to run this command in the same folder as the one in which you ran `clab deploy`.
+
+> *Example*: Let's destroy our lab
+> ```console
+> ~/containerlab-vms/examples$ sudo clab destroy --topo xrv.clab.yml 
+> INFO[0000] Parsing & checking topology file: xrv.clab.yml 
+> INFO[0000] Destroying lab: xrv                          
+> INFO[0000] Removed container: clab-xrv-subscriber-west-2 
+> INFO[0001] Removed container: clab-xrv-subscriber-east-2 
+> INFO[0001] Removed container: clab-xrv-subscriber-east-1 
+> INFO[0001] Removed container: clab-xrv-router-west      
+> INFO[0001] Removed container: clab-xrv-subscriber-west-1 
+> INFO[0001] Removed container: clab-xrv-router-east      
+> INFO[0001] Removing containerlab host entries from /etc/hosts file
+> ```

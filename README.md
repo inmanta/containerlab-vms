@@ -1,12 +1,14 @@
 # containerlab-vms
 
-This project is meant to help building containerlab compatible containers, running virtual routers inside of them.  This has been highly inspired by the vrntelab project.  The working principle is the same as the aforementioned project, but the inner structure of the code has been revised to fix stability issues we have encountered.
+This project is meant to help building [containerlab](https://containerlab.srlinux.dev/) compatible containers, running virtual routers inside of them.  This has been highly inspired by the vrntelab project.  The working principle is the same as the aforementioned project, but the inner structure of the code has been revised to fix stability issues we have encountered.
 
 ## Supported vendors
 
  1. `Cisco`
     1. [`xrv`](vms/xrv)
     2. [`xrv9k`](vms/xrv9k)
+
+You can find some examples of labs using the above vendors in [/examples](examples/).
 
 ## Package structure
 ```

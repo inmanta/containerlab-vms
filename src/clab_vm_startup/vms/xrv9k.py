@@ -150,17 +150,22 @@ class XRV9K(VirtualRouter):
             timeout = None
         else:
             timeout = self.CONFIG_TIMEOUT
+            
+        def remaining_time():
+            remaining = timeout - (time.time() - start_time)
+            LOGGER.debug(f"Time left: {remaining} seconds")
+            return remaining
 
-        self._xr_console.read_until("export@cisco.com.", timeout=timeout)
+        self._xr_console.read_until("export@cisco.com.", timeout=remaining_time())
 
         LOGGER.info(f"Router {self.hostname} has finished booting, it is ready to be configured")
 
         self._xr_console.write("\r")
-        self._xr_console.read_until("Enter root-system username:", timeout=30)
+        self._xr_console.read_until("Enter root-system username:", timeout=remaining_time())
         self._xr_console.write(f"{self.username}\r")
-        self._xr_console.read_until("Enter secret:", timeout=30)
+        self._xr_console.read_until("Enter secret:", timeout=remaining_time())
         self._xr_console.write(f"{self.password}\r")
-        self._xr_console.read_until("Enter secret again:", timeout=30)
+        self._xr_console.read_until("Enter secret again:", timeout=remaining_time())
         self._xr_console.write(f"{self.password}\r")
 
         xrv_console = IOSXRConsole(self._xr_console, self.username, self.password, "RP/0/RP0/CPU0")

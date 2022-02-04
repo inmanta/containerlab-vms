@@ -81,10 +81,10 @@ class IOSXRConsole:
             self.wait_write(self.password, "Password:")
 
         pattern, match, _ = self._console.expect(
-            [auth_failed, cli_prompt],
+            [auth_failed, username_prompt, cli_prompt],
             timeout=10,
         )
-        if pattern == auth_failed:
+        if pattern == auth_failed or pattern == username_prompt:
             raise RuntimeError("Failed to connect, authentication failed")
 
         if pattern == cli_prompt:

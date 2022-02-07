@@ -14,11 +14,8 @@
    limitations under the License.
 """
 import logging
-import re
 import time
 from ipaddress import IPv4Address
-from pathlib import Path
-from textwrap import dedent
 from typing import List, Optional, Tuple
 
 from clab_vm_startup.conn_mode.connection_mode import Connection
@@ -115,7 +112,10 @@ class XRV9K(VirtualRouter):
                 ("-netdev", "tap,ifname=ctrl-dummy,id=ctrl-dummy,script=no,downscript=no"),
                 ("-device", f"virtio-net-pci,netdev=dev-dummy,id=dev-dummy,mac={gen_mac(0)}"),
                 ("-netdev", "tap,ifname=dev-dummy,id=dev-dummy,script=no,downscript=no"),
-                ("-smbios", 'type=1,manufacturer="cisco",product="Cisco IOS XRv 9000",uuid=97fc351b-431d-4cf2-9c01-43c283faf2a3'),
+                (
+                    "-smbios",
+                    'type=1,manufacturer="cisco",product="Cisco IOS XRv 9000",uuid=97fc351b-431d-4cf2-9c01-43c283faf2a3',
+                ),
             ]
         )
         return boot_args
@@ -150,7 +150,7 @@ class XRV9K(VirtualRouter):
             timeout = None
         else:
             timeout = self.CONFIG_TIMEOUT
-            
+
         def remaining_time():
             remaining = timeout - (time.time() - start_time)
             LOGGER.debug(f"Time left: {remaining} seconds")

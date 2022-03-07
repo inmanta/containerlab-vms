@@ -17,10 +17,16 @@ import logging
 import re
 import subprocess
 import time
+from enum import Enum
 from pathlib import Path
 from typing import List, Optional, Tuple
 
 LOGGER = logging.getLogger(__name__)
+
+
+class CPUVendor(str, Enum):
+    INTEL = "GenuineIntel"
+    AMD = "AuthenticAMD"
 
 
 class Host:
@@ -141,3 +147,18 @@ class Host:
         LOGGER.debug(f"The highest interface number in {interfaces} is {self._highest_provisioned_nic_num}")
 
         return self._highest_provisioned_nic_num
+
+    def get_cpu_vendor(self) -> CPUVendor:
+        """
+        Get the cpu vendor of the host by reading the /proc/cpuinfo file.
+        """
+        vendor_id_regex = re.compile(r"vendor_id(\t+| +): (\w+)")
+
+        with open("/proc/cpuinfo", "r") as f:
+            for line in f.readlines():
+                match = vendor_id_regex.match(line)
+                if match is not None:
+                    vendor = match.group(2)
+                    return CPUVendor(vendor)
+
+        raise LookupError("Failed to find the cpu vendor id in /proc/cpuinfo")

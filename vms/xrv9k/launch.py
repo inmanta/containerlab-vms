@@ -18,6 +18,7 @@ import os
 import signal
 from pathlib import Path
 from types import FrameType
+from typing import Type, Union
 
 import click  # type: ignore
 from clab_vm_startup.conn_mode.connection_mode import ConnectionMode
@@ -25,6 +26,7 @@ from clab_vm_startup.conn_mode.traffic_control import TrafficControlConnection
 from clab_vm_startup.helpers.utils import setup_logging
 from clab_vm_startup.host.host import Host
 from clab_vm_startup.vms.xrv9k import XRV9K
+from clab_vm_startup.vms.xrv9k_cli import XRV9K_CLI
 
 LOGGER = logging.getLogger(__name__)
 
@@ -89,11 +91,16 @@ def main(
 ) -> None:
     setup_logging(trace)
 
+    # The user can overwrite the config method to use the cli instead by setting the environment
+    # variable CONFIG_MODE to cli
+    CONFIG_MODE = os.getenv("CONFIG_MODE", "file").lower()
+    Router: Union[Type[XRV9K], Type[XRV9K_CLI]] = XRV9K if CONFIG_MODE == "file" else XRV9K_CLI
+
     # The user can overwrite the config timeout by setting the env variable `CONFIG_TIMEOUT`
     CONFIG_TIMEOUT_OVERWRITE = os.getenv("CONFIG_TIMEOUT")
     if CONFIG_TIMEOUT_OVERWRITE is not None:
         LOGGER.warning(f"Overwriting config timeout with new value: {CONFIG_TIMEOUT_OVERWRITE}")
-        XRV9K.CONFIG_TIMEOUT = int(CONFIG_TIMEOUT_OVERWRITE)
+        Router.CONFIG_TIMEOUT = int(CONFIG_TIMEOUT_OVERWRITE)
 
     # Containerlab will setup some interfaces on its own
     expected_provisioned_nics_count = int(os.getenv("CLAB_INTFS", default=0))
@@ -127,7 +134,7 @@ def main(
         ]
     )
 
-    xrv9k = XRV9K(
+    xrv9k = Router(
         host=host,
         connection=connection,
         disk_image=overlay_disk_image_file,

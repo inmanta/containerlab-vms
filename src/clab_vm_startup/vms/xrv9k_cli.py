@@ -1,9 +1,12 @@
 """
        Copyright 2021 Inmanta
+
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
    You may obtain a copy of the License at
+
        http://www.apache.org/licenses/LICENSE-2.0
+
    Unless required by applicable law or agreed to in writing, software
    distributed under the License is distributed on an "AS IS" BASIS,
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -11,11 +14,8 @@
    limitations under the License.
 """
 import logging
-import re
 import time
 from ipaddress import IPv4Address
-from pathlib import Path
-from textwrap import dedent
 from typing import List, Optional, Tuple
 
 from clab_vm_startup.conn_mode.connection_mode import Connection
@@ -29,14 +29,11 @@ from clab_vm_startup.vms.vr import VirtualRouter
 LOGGER = logging.getLogger(__name__)
 
 
-class XRV9K(VirtualRouter):
+class XRV9K_CLI(VirtualRouter):
     """
     This class represents a Cisco XRV9K virtual router
     """
 
-    ROUTER_CONFIG_FOLDER_PATH = Path("/router-config/")
-    ROUTER_CONFIG = "iosxr_config.txt"
-    ROUTER_CONFIG_ISO_PATH = Path("/router-config.iso")
     CONFIG_TIMEOUT = 20 * 60  # 20 minutes
 
     SERIAL_CONSOLE_COUNT = 4  # Number of serial console to open, cisco has 4 serial consoles
@@ -115,6 +112,10 @@ class XRV9K(VirtualRouter):
                 ("-netdev", "tap,ifname=ctrl-dummy,id=ctrl-dummy,script=no,downscript=no"),
                 ("-device", f"virtio-net-pci,netdev=dev-dummy,id=dev-dummy,mac={gen_mac(0)}"),
                 ("-netdev", "tap,ifname=dev-dummy,id=dev-dummy,script=no,downscript=no"),
+                (
+                    "-smbios",
+                    'type=1,manufacturer="cisco",product="Cisco IOS XRv 9000",uuid=97fc351b-431d-4cf2-9c01-43c283faf2a3',
+                ),
             ]
         )
         return boot_args
@@ -140,52 +141,14 @@ class XRV9K(VirtualRouter):
                 "-machine",
                 "smm=off",
                 "-boot",
-                "order=c",
-                "-drive",
-                f"file={str(self.ROUTER_CONFIG_ISO_PATH)},media=cdrom,index=2",
+                "once=d",
             ]
         )
 
         return args
 
     def pre_start(self) -> None:
-        self.ROUTER_CONFIG_FOLDER_PATH.mkdir(parents=True, exist_ok=True)
-
-        # Generating config file
-        router_config = f"""
-            hostname {self.hostname}
-            username {self.username}
-                group root-lr
-                group cisco-support
-                password {self.password}
-            !
-            interface MgmtEth0/RP0/CPU0/0
-                ipv4 address {str(self.ip_address)}/{self.ip_network.prefixlen}
-                no shutdown
-            !
-            !
-            xml agent tty
-                iteration off
-            !
-            netconf agent tty
-            !
-            netconf-yang agent
-                ssh
-            !
-            ssh server v2
-            ssh server netconf port 830
-            ssh server vrf default
-            end
-        """
-        router_config = dedent(router_config.strip("\n"))
-        (self.ROUTER_CONFIG_FOLDER_PATH / Path(self.ROUTER_CONFIG)).write_text(router_config)
-
-        # Building config iso
-        _, stderr = self.host.run_command(
-            ["mkisofs", "-l", "-o", str(self.ROUTER_CONFIG_ISO_PATH), str(self.ROUTER_CONFIG_FOLDER_PATH)]
-        )
-        if stderr:
-            LOGGER.warning(f"Got some error while running mkisofs: {stderr}")
+        pass
 
     def post_start(self) -> None:
         if self._xr_console is None:
@@ -197,39 +160,61 @@ class XRV9K(VirtualRouter):
         else:
             timeout = self.CONFIG_TIMEOUT
 
-        self._xr_console.read_until("Not settable: Success", timeout=timeout)
+        def remaining_time():
+            remaining = timeout - (time.time() - start_time)
+            LOGGER.debug(f"Time left: {remaining} seconds")
+            return remaining
 
-        LOGGER.info(f"Router {self.hostname} has finished booting, waiting for the configuration to be applied")
+        self._xr_console.read_until("export@cisco.com.", timeout=remaining_time())
 
-        # Waiting for cvac config to complete
-        # The following regex allows us to match logs from cvac on the console
-        cvac_config_regex = re.compile(r"RP\/0\/RP0\/CPU0\:(.*): cvac\[([0-9]+)\]: %MGBL-CVAC-4-CONFIG_([A-Z]+) : (.*)")
+        LOGGER.info(f"Router {self.hostname} has finished booting, it is ready to be configured")
 
-        # Whether the configuration of the router is done
-        cvac_config_done = False
-
-        while not cvac_config_done:
-            remaining_time = float(timeout) if timeout is not None else None
-            if remaining_time is not None:
-                remaining_time -= time.time() - start_time
-
-            _, match, res = self._xr_console.expect([cvac_config_regex], timeout=remaining_time)
-
-            utc, pid, stage, msg = match.groups()
-            if stage == "START":
-                LOGGER.info("Router configuration started")
-                continue
-
-            if stage == "DONE":
-                LOGGER.info("Router configuration completed")
-                cvac_config_done = True
-                continue
-
-            raise RuntimeError(f"Unexpected match while waiting for cvac config to complete, stage is {stage}: {match.string}")
+        self._xr_console.write("\r")
+        self._xr_console.read_until("Enter root-system username:", timeout=remaining_time())
+        self._xr_console.write(f"{self.username}\r")
+        self._xr_console.read_until("Enter secret:", timeout=remaining_time())
+        self._xr_console.write(f"{self.password}\r")
+        self._xr_console.read_until("Enter secret again:", timeout=remaining_time())
+        self._xr_console.write(f"{self.password}\r")
 
         xrv_console = IOSXRConsole(self._xr_console, self.username, self.password, "RP/0/RP0/CPU0")
         xrv_console.connect()
         xrv_console.generate_rsa_key()
+
+        xrv_console.wait_write("configure")
+
+        # Configuring hostname
+        xrv_console.wait_write(f"hostname {self.hostname}")
+
+        # Configuring management interface
+        xrv_console.wait_write("interface MgmtEth0/RP0/CPU0/0")
+        xrv_console.wait_write(f"ipv4 address {str(self.ip_address)}/{self.ip_network.prefixlen}")
+        xrv_console.wait_write("no shutdown")
+        xrv_console.wait_write("exit")
+
+        # Configuring xml agent
+        xrv_console.wait_write("xml agent tty")
+        xrv_console.wait_write("iteration off")
+        xrv_console.wait_write("exit")
+
+        # Configuring netconf agent
+        xrv_console.wait_write("netconf agent tty")
+        xrv_console.wait_write("exit")
+
+        # Configuring netconf-yang agent
+        xrv_console.wait_write("netconf-yang agent")
+        xrv_console.wait_write("ssh")
+        xrv_console.wait_write("exit")
+
+        # Configuring ssh
+        xrv_console.wait_write("ssh server v2")
+        xrv_console.wait_write("ssh server netconf port 830")
+        xrv_console.wait_write("ssh server vrf default")
+
+        # Commiting changes
+        xrv_console.wait_write("commit")
+        xrv_console.wait_write("exit")
+
         xrv_console.disconnect()
 
     def pre_stop(self) -> None:

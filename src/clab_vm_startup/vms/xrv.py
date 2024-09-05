@@ -13,7 +13,9 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
+
 import logging
+import pathlib
 import re
 import time
 from ipaddress import IPv4Address
@@ -29,6 +31,10 @@ from clab_vm_startup.host.socat import Port, PortForwarding
 from clab_vm_startup.vms.vr import VirtualRouter
 
 LOGGER = logging.getLogger(__name__)
+
+# https://github.com/hellt/vrnetlab/blob/1d9928a33f45ecd630604f13b21d1a52d8229e6d/xrv/docker/launch.py#L15
+# The startup config will be mounted by containerlab inside the container
+STARTUP_CONFIG_FILE = pathlib.Path("/config/startup-config.cfg")
 
 
 class XRV(VirtualRouter):
@@ -219,6 +225,17 @@ class XRV(VirtualRouter):
         xrv_console = IOSXRConsole(self._xr_console, self.username, self.password, "RP/0/0/CPU0")
         xrv_console.connect()
         xrv_console.generate_rsa_key()
+
+        # Load the startup config
+        # https://github.com/hellt/vrnetlab/blob/1d9928a33f45ecd630604f13b21d1a52d8229e6d/xrv/docker/launch.py#L226-L232
+        if STARTUP_CONFIG_FILE.is_file():
+            LOGGER.info("Apply startup config")
+            with xrv_console.exclusive_configuration():
+                for line in STARTUP_CONFIG_FILE.read_text().split("\n"):
+                    xrv_console.wait_write(line)
+        else:
+            LOGGER.info("No startup config found at %s", STARTUP_CONFIG_FILE)
+
         xrv_console.disconnect()
 
     def pre_stop(self) -> None:

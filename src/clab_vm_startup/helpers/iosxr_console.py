@@ -13,8 +13,12 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
+
+import contextlib
 import logging
 import re
+import time
+import typing
 from typing import Optional
 
 from clab_vm_startup.helpers.telnet_client import TelnetClient
@@ -152,3 +156,24 @@ class IOSXRConsole:
         elif pattern == key_exists:
             self.wait_write("no", None)
             LOGGER.info("Rsa key was already configured")
+
+    @contextlib.contextmanager
+    def exclusive_configuration(self, timeout: int = 60) -> typing.Generator[None, None, None]:
+        start = time.time()
+        # Try to enter the configuration mode, make sure there is no other config
+        # session running at the same time
+        non_exclusive = "Cannot enter exclusive mode. The Configuration Namespace is locked by another agent."
+        while time.time() - start < timeout:
+            self.wait_write("configure exclusive", self.cli_prompt)
+            try:
+                self.wait_write("", non_exclusive)
+                time.sleep(3)
+            except TimeoutError:
+                # The warning didn't show, we managed to enter the exclusive configuration
+                # mode
+                break
+
+        yield None
+
+        self.wait_write("commit", "#")
+        self.wait_write("exit", "#")

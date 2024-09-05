@@ -13,7 +13,9 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
+
 import logging
+import pathlib
 import time
 from ipaddress import IPv4Address
 from typing import List, Optional, Tuple
@@ -27,6 +29,10 @@ from clab_vm_startup.host.socat import Port, PortForwarding
 from clab_vm_startup.vms.vr import VirtualRouter
 
 LOGGER = logging.getLogger(__name__)
+
+# https://github.com/hellt/vrnetlab/blob/1d9928a33f45ecd630604f13b21d1a52d8229e6d/xrv9k/docker/launch.py#L14
+# The startup config will be mounted by containerlab inside the container
+STARTUP_CONFIG_FILE = pathlib.Path("/config/startup-config.cfg")
 
 
 class XRV9K_CLI(VirtualRouter):
@@ -181,39 +187,43 @@ class XRV9K_CLI(VirtualRouter):
         xrv_console.connect()
         xrv_console.generate_rsa_key()
 
-        xrv_console.wait_write("configure")
+        with xrv_console.exclusive_configuration():
+            # Configuring hostname
+            xrv_console.wait_write(f"hostname {self.hostname}")
 
-        # Configuring hostname
-        xrv_console.wait_write(f"hostname {self.hostname}")
+            # Configuring management interface
+            xrv_console.wait_write("interface MgmtEth0/RP0/CPU0/0")
+            xrv_console.wait_write(f"ipv4 address {str(self.ip_address)}/{self.ip_network.prefixlen}")
+            xrv_console.wait_write("no shutdown")
+            xrv_console.wait_write("exit")
 
-        # Configuring management interface
-        xrv_console.wait_write("interface MgmtEth0/RP0/CPU0/0")
-        xrv_console.wait_write(f"ipv4 address {str(self.ip_address)}/{self.ip_network.prefixlen}")
-        xrv_console.wait_write("no shutdown")
-        xrv_console.wait_write("exit")
+            # Configuring xml agent
+            xrv_console.wait_write("xml agent tty")
+            xrv_console.wait_write("iteration off")
+            xrv_console.wait_write("exit")
 
-        # Configuring xml agent
-        xrv_console.wait_write("xml agent tty")
-        xrv_console.wait_write("iteration off")
-        xrv_console.wait_write("exit")
+            # Configuring netconf agent
+            xrv_console.wait_write("netconf agent tty")
+            xrv_console.wait_write("exit")
 
-        # Configuring netconf agent
-        xrv_console.wait_write("netconf agent tty")
-        xrv_console.wait_write("exit")
+            # Configuring netconf-yang agent
+            xrv_console.wait_write("netconf-yang agent")
+            xrv_console.wait_write("ssh")
+            xrv_console.wait_write("exit")
 
-        # Configuring netconf-yang agent
-        xrv_console.wait_write("netconf-yang agent")
-        xrv_console.wait_write("ssh")
-        xrv_console.wait_write("exit")
+            # Configuring ssh
+            xrv_console.wait_write("ssh server v2")
+            xrv_console.wait_write("ssh server netconf port 830")
+            xrv_console.wait_write("ssh server vrf default")
 
-        # Configuring ssh
-        xrv_console.wait_write("ssh server v2")
-        xrv_console.wait_write("ssh server netconf port 830")
-        xrv_console.wait_write("ssh server vrf default")
-
-        # Commiting changes
-        xrv_console.wait_write("commit")
-        xrv_console.wait_write("exit")
+            # Load the startup config
+            # https://github.com/hellt/vrnetlab/blob/1d9928a33f45ecd630604f13b21d1a52d8229e6d/xrv9k/docker/launch.py#L299-L305
+            if STARTUP_CONFIG_FILE.is_file():
+                LOGGER.info("Apply startup config")
+                for line in STARTUP_CONFIG_FILE.read_text().split("\n"):
+                    xrv_console.wait_write(line)
+            else:
+                LOGGER.info("No startup config found at %s", STARTUP_CONFIG_FILE)
 
         xrv_console.disconnect()
 
